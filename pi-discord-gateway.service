@@ -1,0 +1,18 @@
+[Unit]
+Description=Pi Discord Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/pi-discord-gateway
+ExecStart=/usr/local/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target

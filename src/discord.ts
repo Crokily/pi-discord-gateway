@@ -1,0 +1,216 @@
+/**
+ * Discord channel adapter.
+ *
+ * Architecture borrowed from NanoClaw (https://github.com/qwibitai/nanoclaw).
+ * Handles all Discord I/O: receiving messages, sending responses, typing indicators.
+ * Contains zero business logic — that lives in the pi agent.
+ */
+
+import {
+  Client,
+  Events,
+  GatewayIntentBits,
+  type Message,
+  type TextChannel,
+  type DMChannel,
+} from 'discord.js';
+import { config } from './config.js';
+import { logger } from './logger.js';
+import {
+  getChannel,
+  registerChannel as dbRegisterChannel,
+  enqueueMessage,
+} from './db.js';
+import type { RegisteredChannel } from './types.js';
+
+let client: Client | null = null;
+let triggerPattern: RegExp;
+let botId: string;
+
+export async function startDiscord(): Promise<void> {
+  client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.DirectMessages,
+    ],
+  });
+
+  client.on(Events.MessageCreate, handleMessage);
+  client.on(Events.Error, (err) => logger.error({ err: err.message }, 'Discord client error'));
+
+  return new Promise<void>((resolve) => {
+    client!.once(Events.ClientReady, (ready) => {
+      botId = ready.user.id;
+      triggerPattern = new RegExp(`^@${config.triggerName}\\b`, 'i');
+      logger.info({ tag: ready.user.tag, id: botId }, 'Discord bot connected');
+      resolve();
+    });
+    client!.login(config.discordToken);
+  });
+}
+
+async function handleMessage(message: Message): Promise<void> {
+  // Ignore bot messages
+  if (message.author.bot) return;
+
+  const isDM = !message.guild;
+  const channelId = message.channelId;
+  const jid = `dc:${channelId}`;
+
+  // ── Build content ──
+  let content = message.content;
+  const senderName = message.member?.displayName || message.author.displayName || message.author.username;
+  const sender = message.author.id;
+  const timestamp = message.createdAt.toISOString();
+
+  // Translate @bot mentions → trigger format
+  if (client?.user) {
+    const isMentioned =
+      message.mentions.users.has(botId) ||
+      content.includes(`<@${botId}>`) ||
+      content.includes(`<@!${botId}>`);
+
+    if (isMentioned) {
+      content = content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
+      if (!triggerPattern.test(content)) {
+        content = `@${config.triggerName} ${content}`;
+      }
+    }
+  }
+
+  // Attachments → placeholders
+  if (message.attachments.size > 0) {
+    const descs = [...message.attachments.values()].map((att) => {
+      const ct = att.contentType || '';
+      if (ct.startsWith('image/')) return `[Image: ${att.name || 'image'}]`;
+      if (ct.startsWith('video/')) return `[Video: ${att.name || 'video'}]`;
+      if (ct.startsWith('audio/')) return `[Audio: ${att.name || 'audio'}]`;
+      return `[File: ${att.name || 'file'}]`;
+    });
+    content = content ? `${content}\n${descs.join('\n')}` : descs.join('\n');
+  }
+
+  // Reply context
+  if (message.reference?.messageId) {
+    try {
+      const ref = await message.channel.messages.fetch(message.reference.messageId);
+      const refAuthor = ref.member?.displayName || ref.author.displayName || ref.author.username;
+      content = `[Reply to ${refAuthor}] ${content}`;
+    } catch {
+      // deleted message
+    }
+  }
+
+  // ── Channel registration check ──
+  let channel = getChannel(jid);
+
+  // Auto-register DMs
+  if (!channel && isDM && config.autoRegisterDMs) {
+    const reg: RegisteredChannel = {
+      jid,
+      name: `DM:${senderName}`,
+      folder: `dm_${sender}`,
+      requiresTrigger: false,
+      isMain: false,
+    };
+    dbRegisterChannel(reg);
+    channel = reg;
+    logger.info({ jid, senderName }, 'Auto-registered DM channel');
+  }
+
+  if (!channel) {
+    logger.debug({ jid }, 'Message from unregistered channel, ignoring');
+    return;
+  }
+
+  // ── Trigger check ──
+  if (channel.requiresTrigger && !triggerPattern.test(content)) {
+    logger.debug({ jid }, 'Message does not match trigger, ignoring');
+    return;
+  }
+
+  // Strip trigger prefix from content sent to agent
+  content = content.replace(triggerPattern, '').trim();
+  if (!content) return;
+
+  // ── Enqueue ──
+  enqueueMessage({ channelJid: jid, sender, senderName, content, timestamp });
+  logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
+}
+
+// ── Outbound ──
+
+const DISCORD_MAX_LENGTH = 2000;
+
+export async function sendResponse(jid: string, text: string): Promise<void> {
+  if (!client) return;
+
+  const channelId = jid.replace(/^dc:/, '');
+
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !('send' in channel)) {
+      logger.warn({ jid }, 'Channel not found or not text-based');
+      return;
+    }
+
+    const textChannel = channel as TextChannel | DMChannel;
+
+    if (text.length <= DISCORD_MAX_LENGTH) {
+      await textChannel.send(text);
+    } else {
+      // Split at line boundaries when possible
+      const chunks = splitMessage(text, DISCORD_MAX_LENGTH);
+      for (const chunk of chunks) {
+        await textChannel.send(chunk);
+      }
+    }
+    logger.info({ jid, length: text.length }, 'Response sent');
+  } catch (err: any) {
+    logger.error({ jid, err: err.message }, 'Failed to send message');
+  }
+}
+
+export async function setTyping(jid: string): Promise<void> {
+  if (!client) return;
+  try {
+    const channelId = jid.replace(/^dc:/, '');
+    const channel = await client.channels.fetch(channelId);
+    if (channel && 'sendTyping' in channel) {
+      await (channel as TextChannel).sendTyping();
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+export function stopDiscord(): void {
+  if (client) {
+    client.destroy();
+    client = null;
+    logger.info('Discord bot stopped');
+  }
+}
+
+export function getBotTag(): string | undefined {
+  return client?.user?.tag;
+}
+
+// ── Helpers ──
+
+function splitMessage(text: string, max: number): string[] {
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > max) {
+    // Try to split at last newline within limit
+    let splitAt = remaining.lastIndexOf('\n', max);
+    if (splitAt <= 0) splitAt = max; // hard split if no newline
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).replace(/^\n/, '');
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
