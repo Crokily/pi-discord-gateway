@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { downloadAttachments, type AttachmentMeta } from './media.js';
 import {
   readSessionCreatedAt,
   resolveChannelSessionDir,
@@ -40,7 +41,7 @@ export interface ChannelSessionStatus {
 export async function invokeAgent(
   channelFolder: string,
   userText: string,
-  opts?: { model?: string; thinking?: string; signal?: AbortSignal },
+  opts?: { model?: string; thinking?: string; signal?: AbortSignal; attachments?: string | null },
 ): Promise<AgentResult> {
   const sessionDir = resolveChannelSessionDir(channelFolder);
   mkdirSync(sessionDir, { recursive: true });
@@ -60,6 +61,23 @@ export async function invokeAgent(
   // Extra flags
   if (config.piExtraFlags) {
     args.push(...config.piExtraFlags.split(/\s+/).filter(Boolean));
+  }
+
+  // Download attachments and pass as @file args (pi handles all types natively)
+  if (opts?.attachments) {
+    try {
+      const metas: AttachmentMeta[] = JSON.parse(opts.attachments);
+      const messageId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const downloaded = await downloadAttachments(metas, channelFolder, messageId);
+      for (const file of downloaded) {
+        args.push(`@${file.filePath}`);
+      }
+      if (downloaded.length > 0) {
+        logger.info({ channelFolder, count: downloaded.length }, 'Attached files for pi');
+      }
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Failed to process attachments');
+    }
   }
 
   // Prompt (must be last)

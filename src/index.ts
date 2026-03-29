@@ -11,6 +11,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { initDb, closeDb, registerChannel, unregisterChannel, getAllChannels } from './db.js';
 import { startDiscord, stopDiscord, getBotTag } from './discord.js';
+import { startMediaCleanup } from './media.js';
 import { startProcessingLoop, stopProcessingLoop } from './queue.js';
 import { validateSessionFolder } from './session-path.js';
 import type { RegisteredChannel } from './types.js';
@@ -46,6 +47,7 @@ async function startGateway(): Promise<void> {
 
   await startDiscord();
   startProcessingLoop();
+  startMediaCleanup();
 
   logger.info({
     bot: getBotTag(),

@@ -32,6 +32,8 @@ export interface QueuedMessage {
   content: string;
   timestamp: string;
   status: 'pending' | 'processing' | 'done' | 'failed';
+  /** JSON array of attachment metadata, or null */
+  attachments: string | null;
 }
 
 /** Agent invocation result */

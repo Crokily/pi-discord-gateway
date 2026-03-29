@@ -23,6 +23,7 @@ import {
   registerChannel as dbRegisterChannel,
   enqueueMessage,
 } from './db.js';
+import type { AttachmentMeta } from './media.js';
 import type { RegisteredChannel } from './types.js';
 import { handleAutocomplete, handleChatCommand, registerGlobalCommands } from './slash-commands.js';
 
@@ -122,16 +123,16 @@ async function handleMessage(message: Message): Promise<void> {
     }
   }
 
-  // Attachments → placeholders
+  // Attachments → extract metadata for downstream download
+  let attachmentsJson: string | null = null;
   if (message.attachments.size > 0) {
-    const descs = [...message.attachments.values()].map((att) => {
-      const ct = att.contentType || '';
-      if (ct.startsWith('image/')) return `[Image: ${att.name || 'image'}]`;
-      if (ct.startsWith('video/')) return `[Video: ${att.name || 'video'}]`;
-      if (ct.startsWith('audio/')) return `[Audio: ${att.name || 'audio'}]`;
-      return `[File: ${att.name || 'file'}]`;
-    });
-    content = content ? `${content}\n${descs.join('\n')}` : descs.join('\n');
+    const metas: AttachmentMeta[] = [...message.attachments.values()].map((att) => ({
+      url: att.url,
+      name: att.name || 'file',
+      contentType: att.contentType || '',
+      size: att.size || 0,
+    }));
+    attachmentsJson = JSON.stringify(metas);
   }
 
   // Reply context
@@ -180,7 +181,7 @@ async function handleMessage(message: Message): Promise<void> {
   if (!content) return;
 
   // ── Enqueue ──
-  enqueueMessage({ channelJid: jid, sender, senderName, content, timestamp });
+  enqueueMessage({ channelJid: jid, sender, senderName, content, timestamp, attachments: attachmentsJson });
   logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
 

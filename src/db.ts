@@ -50,6 +50,7 @@ export function initDb(): void {
 
   ensureTableColumn('channels', 'model_override', "text not null default ''");
   ensureTableColumn('channels', 'thinking_override', "text not null default ''");
+  ensureTableColumn('message_queue', 'attachments', 'text');
 
   logger.info({ path: config.dbPath }, 'Database initialized');
 }
@@ -139,11 +140,12 @@ export function enqueueMessage(msg: {
   senderName: string;
   content: string;
   timestamp: string;
+  attachments?: string | null;
 }): void {
   db.prepare(`
-    insert into message_queue (channel_jid, sender, sender_name, content, timestamp)
-    values (?, ?, ?, ?, ?)
-  `).run(msg.channelJid, msg.sender, msg.senderName, msg.content, msg.timestamp);
+    insert into message_queue (channel_jid, sender, sender_name, content, timestamp, attachments)
+    values (?, ?, ?, ?, ?, ?)
+  `).run(msg.channelJid, msg.sender, msg.senderName, msg.content, msg.timestamp, msg.attachments ?? null);
 }
 
 export function claimNextMessage(channelJid?: string): QueuedMessage | undefined {

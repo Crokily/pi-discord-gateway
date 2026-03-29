@@ -73,7 +73,7 @@ function dispatch(): void {
     activeTasks++;
 
     // Fire and forget — processMessage handles its own errors
-    processMessage(jid, msg.rowid, msg.sender_name, msg.content)
+    processMessage(jid, msg.rowid, msg.sender_name, msg.content, msg.attachments)
       .finally(() => {
         activeChannels.delete(jid);
         activeTasks--;
@@ -86,6 +86,7 @@ async function processMessage(
   rowid: number,
   senderName: string,
   content: string,
+  attachments?: string | null,
 ): Promise<void> {
   const channel = getChannel(jid);
   if (!channel) {
@@ -127,6 +128,7 @@ async function processMessage(
     const result = await invokeAgent(channel.folder, prompt, {
       model: effective.rawModelRef || undefined,
       thinking: effective.hasManagedThinking ? effective.effectiveThinking : undefined,
+      attachments,
     });
 
     await stopTypingLoop();
