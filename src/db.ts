@@ -194,10 +194,6 @@ export function markMessageFailed(rowid: number): void {
   db.prepare("update message_queue set status = 'failed', processed_at = datetime('now') where rowid = ?").run(rowid);
 }
 
-export function requeueMessage(rowid: number): void {
-  db.prepare("update message_queue set status = 'pending', processed_at = null where rowid = ?").run(rowid);
-}
-
 export function clearPendingMessages(channelJid: string): number {
   const result = db.prepare("delete from message_queue where channel_jid = ? and status = 'pending'").run(channelJid);
   return result.changes;

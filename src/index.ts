@@ -58,15 +58,23 @@ async function startGateway(): Promise<void> {
   let stopMediaCleanup = () => {};
   let processingStarted = false;
   let shutdownPromise: Promise<void> | null = null;
-  const signalWaiter = createShutdownSignalWaiter((signal) => shutdown(`received ${signal}`));
+
+  let resolveSignalWait!: () => void;
+  const signalWait = new Promise<void>(resolve => { resolveSignalWait = resolve; });
+
+  const onSignal = (sig: NodeJS.Signals) => {
+    void shutdown(`received ${sig}`).then(resolveSignalWait, resolveSignalWait);
+  };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
 
   const shutdown = (reason: string) => {
-    if (shutdownPromise) {
-      return shutdownPromise;
-    }
+    if (shutdownPromise) return shutdownPromise;
 
     shutdownPromise = (async () => {
-      signalWaiter.detach();
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+
       logger.info({ reason }, 'Shutting down gateway');
 
       stopMediaCleanup();
@@ -103,47 +111,11 @@ async function startGateway(): Promise<void> {
       sessionsDir: config.sessionsDir,
     }, 'Gateway running');
 
-    await signalWaiter.wait;
+    await signalWait;
   } catch (err) {
     await shutdown('startup failure');
     throw err;
   }
-}
-
-function createShutdownSignalWaiter(onSignal: (signal: NodeJS.Signals) => Promise<void>): {
-  wait: Promise<void>;
-  detach: () => void;
-} {
-  let settled = false;
-  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
-
-  const detach = () => {
-    if (!signalHandler) return;
-    process.off('SIGINT', signalHandler);
-    process.off('SIGTERM', signalHandler);
-    signalHandler = undefined;
-  };
-
-  const wait = new Promise<void>((resolve, reject) => {
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      detach();
-      callback();
-    };
-
-    signalHandler = (signal: NodeJS.Signals) => {
-      void onSignal(signal).then(
-        () => finish(resolve),
-        (err) => finish(() => reject(err)),
-      );
-    };
-
-    process.once('SIGINT', signalHandler);
-    process.once('SIGTERM', signalHandler);
-  });
-
-  return { wait, detach };
 }
 
 function errorMessage(err: unknown): string {

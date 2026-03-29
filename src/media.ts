@@ -11,7 +11,7 @@ import { rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { selectAttachmentsWithinLimits, type AttachmentMeta } from './attachments.js';
+import { type AttachmentMeta } from './attachments.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { resolveChannelMediaMessageDir } from './session-path.js';
@@ -41,36 +41,12 @@ export async function downloadAttachments(
 ): Promise<DownloadedFile[]> {
   if (attachments.length === 0) return [];
 
-  const selection = selectAttachmentsWithinLimits(attachments, {
-    maxFileBytes: config.maxAttachmentBytes,
-    maxTotalBytes: config.maxTotalAttachmentBytes,
-  });
-
-  if (selection.rejected.length > 0) {
-    logger.warn(
-      {
-        channelFolder,
-        skipped: selection.rejected.map(({ attachment, reason, limitBytes }) => ({
-          name: attachment.name,
-          size: attachment.size,
-          reason,
-          limitBytes,
-        })),
-      },
-      'Skipped Discord attachments that exceeded configured limits',
-    );
-  }
-
-  if (selection.accepted.length === 0) {
-    return [];
-  }
-
   const mediaDir = resolveChannelMediaMessageDir(channelFolder, messageId);
   mkdirSync(mediaDir, { recursive: true });
 
   const results: DownloadedFile[] = [];
 
-  for (const [index, att] of selection.accepted.entries()) {
+  for (const [index, att] of attachments.entries()) {
     const safeName = sanitizeFilename(att.name || 'file');
     const fileName = index > 0 ? `${index}_${safeName}` : safeName;
     const filePath = join(mediaDir, fileName);

@@ -14,7 +14,6 @@ import {
   markMessageDone,
   markMessageFailed,
   recoverStuckMessages,
-  requeueMessage,
   logMessage,
   getChannel,
 } from './db.js';
@@ -204,8 +203,8 @@ async function processMessage(
     });
 
     if (signal.aborted) {
-      requeueMessage(rowid);
-      logger.info({ jid, rowid }, 'Message requeued after shutdown aborted processing');
+      markMessageFailed(rowid);
+      logger.info({ jid, rowid }, 'Message abandoned: shutdown interrupted processing');
       return;
     }
 
@@ -229,8 +228,8 @@ async function processMessage(
     logger.warn({ jid, error: result.error }, 'Agent returned error');
   } catch (err: any) {
     if (signal.aborted) {
-      requeueMessage(rowid);
-      logger.info({ jid, rowid }, 'Message requeued after shutdown interrupted processing');
+      markMessageFailed(rowid);
+      logger.info({ jid, rowid }, 'Message abandoned: shutdown interrupted processing');
       return;
     }
 
