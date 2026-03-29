@@ -1,4 +1,4 @@
-import { existsSync, renameSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, renameSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { config } from './config.js';
 
@@ -62,4 +62,51 @@ export function rotateChannelSessionDir(folder: string): string | undefined {
 
   renameSync(sessionDir, archiveDir);
   return archiveDir;
+}
+
+/** Resolve the most recent active session file for a channel, if one exists. */
+export function resolveLatestChannelSessionFile(folder: string): string | undefined {
+  const sessionDir = resolveChannelSessionDir(folder);
+  if (!existsSync(sessionDir)) {
+    return undefined;
+  }
+
+  const sessionFile = readdirSync(sessionDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+    .map((entry) => entry.name)
+    .sort((a, b) => b.localeCompare(a))[0];
+
+  if (!sessionFile) {
+    return undefined;
+  }
+
+  return resolve(sessionDir, sessionFile);
+}
+
+/** Read the session creation timestamp from the metadata record at the start of a session file. */
+export function readSessionCreatedAt(sessionFile: string): string | undefined {
+  let fd: number | undefined;
+
+  try {
+    fd = openSync(sessionFile, 'r');
+    const buffer = Buffer.alloc(4096);
+    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+    if (bytesRead <= 0) {
+      return undefined;
+    }
+
+    const firstLine = buffer.toString('utf-8', 0, bytesRead).split(/\r?\n/u, 1)[0]?.trim();
+    if (!firstLine) {
+      return undefined;
+    }
+
+    const record = JSON.parse(firstLine) as { timestamp?: string };
+    return typeof record.timestamp === 'string' ? record.timestamp : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+  }
 }

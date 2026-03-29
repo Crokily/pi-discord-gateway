@@ -6,6 +6,7 @@ import {
   type Client,
   type InteractionReplyOptions,
 } from 'discord.js';
+import { getChannelSessionStatus, type ChannelSessionStatus, type SessionContextUsage, type SessionTokenUsage } from './agent.js';
 import { config } from './config.js';
 import {
   clearChannelModelOverride,
@@ -28,6 +29,7 @@ import {
   buildThinkingAdjustmentMessage,
   computeEffectiveChannelSettings,
   getDesiredThinkingLevel,
+  type EffectiveChannelSettings,
 } from './channel-settings.js';
 import { isChannelProcessing } from './queue.js';
 import { rotateChannelSessionDir } from './session-path.js';
@@ -131,8 +133,10 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
   } catch (err: any) {
     logger.error({ err: err.message, command: interaction.commandName, subcommand }, 'Slash command failed');
     const payload = reply(`⚠️ ${err.message}`, interaction);
-    if (interaction.replied || interaction.deferred) {
+    if (interaction.replied) {
       await interaction.followUp(payload);
+    } else if (interaction.deferred) {
+      await interaction.editReply({ content: payload.content });
     } else {
       await interaction.reply(payload);
     }
@@ -177,20 +181,11 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
     return;
   }
 
+  await interaction.deferReply(interaction.inGuild() ? { flags: MessageFlags.Ephemeral } : undefined);
+
   const effective = computeEffectiveChannelSettings(channel);
-
-  const lines = [
-    `Channel: ${channel.name}`,
-    `Model: ${effective.displayModel} (${effective.modelSource})`,
-    `Thinking: ${effective.hasManagedThinking ? effective.effectiveThinking : '(pi runtime default)'} (${effective.thinkingSource})`,
-    `Reasoning support: ${effective.modelInfo ? (effective.modelInfo.reasoning ? 'yes' : 'no') : 'unknown'}`,
-  ];
-
-  if (effective.thinkingAdjusted) {
-    lines.push(`Thinking fallback: ${effective.thinkingAdjustmentMessage}`);
-  }
-
-  await interaction.reply(reply(lines.join('\n'), interaction));
+  const sessionStatus = await getChannelSessionStatus(channel.folder);
+  await interaction.editReply({ content: buildStatusMessage(effective, sessionStatus) });
 }
 
 async function handleModelSet(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -304,6 +299,113 @@ function ensureManagedChannel(interaction: ChatInputCommandInteraction): Registe
 
 function notRegisteredMessage(): string {
   return 'This channel is not registered with the gateway yet. Register it via the CLI first.';
+}
+
+function buildStatusMessage(effective: EffectiveChannelSettings, sessionStatus: ChannelSessionStatus): string {
+  const rows: Array<[string, string]> = [
+    ['Model', formatModelValue(effective)],
+    ['Thinking', formatThinkingValue(effective)],
+  ];
+
+  if (effective.thinkingAdjusted) {
+    rows.push(['Fallback', formatThinkingFallback(effective)]);
+  }
+
+  rows.push(
+    ['Reasoning', effective.modelInfo ? (effective.modelInfo.reasoning ? 'yes' : 'no') : 'unknown'],
+    ['Session', sessionStatus.createdAt ? formatSessionCreatedAt(sessionStatus.createdAt) : 'not started'],
+    ['Tokens', formatTokenUsage(sessionStatus.tokens, sessionStatus.statsSource)],
+    ['Context', formatContextUsage(sessionStatus.contextUsage)],
+  );
+
+  return `\`\`\`text\n${formatTwoColumnRows(rows)}\n\`\`\``;
+}
+
+function formatModelValue(effective: EffectiveChannelSettings): string {
+  if (effective.modelSource === 'pi runtime default') {
+    return 'pi runtime default';
+  }
+
+  return `${effective.displayModel} (${formatSettingSource(effective.modelSource)})`;
+}
+
+function formatThinkingValue(effective: EffectiveChannelSettings): string {
+  if (!effective.hasManagedThinking || effective.thinkingSource === 'pi runtime default') {
+    return 'pi runtime default';
+  }
+
+  return `${effective.effectiveThinking} (${formatSettingSource(effective.thinkingSource)})`;
+}
+
+function formatThinkingFallback(effective: EffectiveChannelSettings): string {
+  if (effective.modelInfo && !effective.modelInfo.reasoning && effective.requestedThinking !== 'off') {
+    return `${effective.requestedThinking} -> off (no reasoning)`;
+  }
+
+  if (effective.requestedThinking === 'xhigh' && effective.effectiveThinking === 'high') {
+    return 'xhigh -> high (unsupported)';
+  }
+
+  return `${effective.requestedThinking} -> ${effective.effectiveThinking}`;
+}
+
+function formatSettingSource(source: EffectiveChannelSettings['modelSource']): string {
+  switch (source) {
+    case 'override':
+      return 'channel';
+    case 'default':
+      return 'gateway';
+    case 'pi runtime default':
+      return 'pi';
+  }
+}
+
+function formatSessionCreatedAt(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+}
+
+function formatTokenUsage(tokens: SessionTokenUsage | undefined, statsSource: ChannelSessionStatus['statsSource']): string {
+  if (!tokens) {
+    return statsSource === 'none' ? '0 total' : '?';
+  }
+
+  const cache = tokens.cacheRead + tokens.cacheWrite;
+  const details = [`${formatNumber(tokens.input)} in`, `${formatNumber(tokens.output)} out`];
+  if (cache > 0) {
+    details.push(`${formatNumber(cache)} cache`);
+  }
+
+  const showDetails = tokens.input > 0 || tokens.output > 0 || cache > 0;
+  return `${formatNumber(tokens.total)} total${showDetails ? ` (${details.join(' / ')})` : ''}`;
+}
+
+function formatContextUsage(contextUsage: SessionContextUsage | undefined): string {
+  if (!contextUsage) {
+    return '?';
+  }
+
+  const tokens = contextUsage.tokens == null ? '?' : formatNumber(contextUsage.tokens);
+  const window = contextUsage.contextWindow == null ? '?' : formatNumber(contextUsage.contextWindow);
+  const percent = contextUsage.percent == null ? '?' : `${formatPercent(contextUsage.percent)}%`;
+  return `${tokens} / ${window} (${percent})`;
+}
+
+function formatTwoColumnRows(rows: Array<[string, string]>): string {
+  const width = rows.reduce((max, [label]) => Math.max(max, label.length), 0);
+  return rows.map(([label, value]) => `${label.padEnd(width)}  ${value}`).join('\n');
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
 }
 
 function reply(content: string, interaction: ChatInputCommandInteraction): InteractionReplyOptions {

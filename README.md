@@ -90,7 +90,11 @@ npm run dev   # run with tsx (no build needed)
 The gateway registers the global `/pi` command on startup.
 
 ### `/pi status`
-Show the effective model/thinking settings for the current channel.
+Show a compact status block for the current channel:
+- effective model and thinking settings
+- reasoning support
+- session creation time
+- token totals and current context usage
 
 ### `/pi model`
 Set the current channel's default model.
