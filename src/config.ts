@@ -8,9 +8,14 @@ function env(key: string, fallback = ''): string {
   return (process.env[key] ?? '').trim() || fallback;
 }
 
-function envInt(key: string, fallback: number): number {
-  const v = parseInt(env(key), 10);
-  return Number.isNaN(v) ? fallback : v;
+function envInt(key: string, fallback: number, opts: { min?: number } = {}): number {
+  const raw = env(key);
+  if (!raw) return fallback;
+
+  const v = Number.parseInt(raw, 10);
+  if (Number.isNaN(v)) return fallback;
+  if (opts.min !== undefined && v < opts.min) return fallback;
+  return v;
 }
 
 function envBool(key: string, fallback: boolean): boolean {
@@ -42,10 +47,13 @@ export const config = {
   triggerName: env('TRIGGER_NAME', 'Andy'),
 
   /** Max concurrent agent invocations */
-  maxConcurrency: envInt('MAX_CONCURRENCY', 3),
+  maxConcurrency: envInt('MAX_CONCURRENCY', 3, { min: 1 }),
 
   /** Poll interval for message queue (ms) */
-  pollInterval: envInt('POLL_INTERVAL_MS', 1000),
+  pollInterval: envInt('POLL_INTERVAL_MS', 1000, { min: 1 }),
+
+  /** Graceful shutdown timeout before aborting in-flight tasks (ms) */
+  shutdownTimeoutMs: envInt('SHUTDOWN_TIMEOUT_MS', 15_000, { min: 0 }),
 
   /** Log level */
   logLevel: env('LOG_LEVEL', 'info'),
@@ -58,6 +66,12 @@ export const config = {
 
   /** Auto-register DM channels */
   autoRegisterDMs: envBool('AUTO_REGISTER_DMS', true),
+
+  /** Max size for a single Discord attachment in bytes (0 disables the limit) */
+  maxAttachmentBytes: envInt('MAX_ATTACHMENT_BYTES', 25 * 1024 * 1024, { min: 0 }),
+
+  /** Max combined attachment size per Discord message in bytes (0 disables the limit) */
+  maxTotalAttachmentBytes: envInt('MAX_TOTAL_ATTACHMENT_BYTES', 50 * 1024 * 1024, { min: 0 }),
 } as const;
 
 export type Config = typeof config;

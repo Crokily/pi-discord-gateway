@@ -16,57 +16,138 @@ import { startProcessingLoop, stopProcessingLoop } from './queue.js';
 import { validateSessionFolder } from './session-path.js';
 import type { RegisteredChannel } from './types.js';
 
-// ── CLI commands (run without starting the bot) ──
-
 const [cmd, ...args] = process.argv.slice(2);
 
-if (cmd === 'register') {
-  cliRegister(args);
-} else if (cmd === 'unregister') {
-  cliUnregister(args);
-} else if (cmd === 'channels') {
-  cliListChannels();
-} else if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
-  printHelp();
-} else {
-  // Default: start the gateway
-  startGateway();
+void main().catch(async (err) => {
+  logger.fatal({ err: errorMessage(err) }, 'Gateway exited with error');
+  stopDiscord();
+  closeDb();
+  process.exitCode = 1;
+});
+
+async function main(): Promise<void> {
+  switch (cmd) {
+    case 'register':
+      cliRegister(args);
+      return;
+    case 'unregister':
+      cliUnregister(args);
+      return;
+    case 'channels':
+      cliListChannels();
+      return;
+    case 'help':
+    case '--help':
+    case '-h':
+      printHelp();
+      return;
+    default:
+      await startGateway();
+  }
 }
 
 // ── Gateway startup ──
 
 async function startGateway(): Promise<void> {
   if (!config.discordToken) {
-    logger.fatal('DISCORD_BOT_TOKEN is required. Set it in .env or environment.');
-    process.exit(1);
+    throw new Error('DISCORD_BOT_TOKEN is required. Set it in .env or environment.');
   }
 
   initDb();
 
-  logger.info('Starting pi-discord-gateway...');
+  let stopMediaCleanup = () => {};
+  let processingStarted = false;
+  let shutdownPromise: Promise<void> | null = null;
+  const signalWaiter = createShutdownSignalWaiter((signal) => shutdown(`received ${signal}`));
 
-  await startDiscord();
-  startProcessingLoop();
-  startMediaCleanup();
+  const shutdown = (reason: string) => {
+    if (shutdownPromise) {
+      return shutdownPromise;
+    }
 
-  logger.info({
-    bot: getBotTag(),
-    trigger: `@${config.triggerName}`,
-    concurrency: config.maxConcurrency,
-    sessionsDir: config.sessionsDir,
-  }, 'Gateway running');
+    shutdownPromise = (async () => {
+      signalWaiter.detach();
+      logger.info({ reason }, 'Shutting down gateway');
 
-  // Graceful shutdown
-  const shutdown = () => {
-    logger.info('Shutting down...');
-    stopProcessingLoop();
-    stopDiscord();
-    closeDb();
-    process.exit(0);
+      stopMediaCleanup();
+
+      if (processingStarted) {
+        await stopProcessingLoop({ timeoutMs: config.shutdownTimeoutMs });
+      }
+
+      stopDiscord();
+      closeDb();
+      logger.info('Gateway stopped');
+    })();
+
+    return shutdownPromise;
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  try {
+    logger.info('Starting pi-discord-gateway...');
+
+    await startDiscord();
+    if (shutdownPromise) {
+      await shutdownPromise;
+      return;
+    }
+
+    startProcessingLoop();
+    processingStarted = true;
+    stopMediaCleanup = startMediaCleanup();
+
+    logger.info({
+      bot: getBotTag(),
+      trigger: `@${config.triggerName}`,
+      concurrency: config.maxConcurrency,
+      sessionsDir: config.sessionsDir,
+    }, 'Gateway running');
+
+    await signalWaiter.wait;
+  } catch (err) {
+    await shutdown('startup failure');
+    throw err;
+  }
+}
+
+function createShutdownSignalWaiter(onSignal: (signal: NodeJS.Signals) => Promise<void>): {
+  wait: Promise<void>;
+  detach: () => void;
+} {
+  let settled = false;
+  let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
+
+  const detach = () => {
+    if (!signalHandler) return;
+    process.off('SIGINT', signalHandler);
+    process.off('SIGTERM', signalHandler);
+    signalHandler = undefined;
+  };
+
+  const wait = new Promise<void>((resolve, reject) => {
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      detach();
+      callback();
+    };
+
+    signalHandler = (signal: NodeJS.Signals) => {
+      void onSignal(signal).then(
+        () => finish(resolve),
+        (err) => finish(() => reject(err)),
+      );
+    };
+
+    process.once('SIGINT', signalHandler);
+    process.once('SIGTERM', signalHandler);
+  });
+
+  return { wait, detach };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 // ── CLI handlers ──
@@ -167,7 +248,7 @@ function printHelp(): void {
 pi-discord-gateway — Lightweight Discord gateway for pi coding agent
 
 USAGE:
-  npx pi-discord-gateway                         Start the gateway
+  npx pi-discord-gateway                           Start the gateway
   npx pi-discord-gateway register <id> <name>     Register a Discord channel
   npx pi-discord-gateway unregister <id>          Unregister a channel
   npx pi-discord-gateway channels                 List registered channels
@@ -179,17 +260,21 @@ REGISTER OPTIONS:
   --main             Mark as main channel (implies --no-trigger)
 
 ENVIRONMENT:
-  DISCORD_BOT_TOKEN  Discord bot token (required)
-  PI_BIN             Path to pi binary (default: pi)
-  PI_MODEL           Default model for pi
-  PI_THINKING        Thinking level for pi
-  TRIGGER_NAME       Bot trigger name (default: Andy)
-  MAX_CONCURRENCY    Max parallel agent invocations (default: 3)
-  SESSIONS_DIR       Session storage directory
-  DB_PATH            SQLite database path
-  AUTO_REGISTER_DMS  Auto-register DM channels (default: true)
-  LOG_LEVEL          Log level: debug/info/warn/error (default: info)
-  PI_CWD             Working directory for pi agent
-  PI_EXTRA_FLAGS     Extra flags to pass to pi
+  DISCORD_BOT_TOKEN         Discord bot token (required)
+  PI_BIN                    Path to pi binary (default: pi)
+  PI_MODEL                  Default model for pi
+  PI_THINKING               Thinking level for pi
+  TRIGGER_NAME              Bot trigger name (default: Andy)
+  MAX_CONCURRENCY           Max parallel agent invocations (default: 3)
+  POLL_INTERVAL_MS          Queue poll interval in ms (default: 1000)
+  SHUTDOWN_TIMEOUT_MS       Graceful drain timeout before aborting in-flight tasks (default: 15000)
+  MAX_ATTACHMENT_BYTES      Max size per attachment in bytes (default: 26214400)
+  MAX_TOTAL_ATTACHMENT_BYTES Max combined attachment size in bytes (default: 52428800)
+  SESSIONS_DIR              Session storage directory
+  DB_PATH                   SQLite database path
+  AUTO_REGISTER_DMS         Auto-register DM channels (default: true)
+  LOG_LEVEL                 Log level: debug/info/warn/error (default: info)
+  PI_CWD                    Working directory for pi agent
+  PI_EXTRA_FLAGS            Extra flags to pass to pi
 `);
 }

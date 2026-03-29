@@ -5,11 +5,15 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { type RegisteredChannel, type QueuedMessage, type ThinkingLevel } from './types.js';
 
-let db: Database.Database;
+let db!: Database.Database;
+let dbOpen = false;
 
 export function initDb(): void {
+  if (dbOpen) return;
+
   mkdirSync(dirname(config.dbPath), { recursive: true });
   db = new Database(config.dbPath);
+  dbOpen = true;
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
 
@@ -149,22 +153,36 @@ export function enqueueMessage(msg: {
 }
 
 export function claimNextMessage(channelJid?: string): QueuedMessage | undefined {
-  const stmt = channelJid
+  const row = (channelJid
     ? db.prepare(`
-        select rowid, * from message_queue
-        where status = 'pending' and channel_jid = ?
-        order by rowid asc limit 1
-      `)
+        with next_message as (
+          select rowid
+          from message_queue
+          where status = 'pending' and channel_jid = ?
+          order by rowid asc
+          limit 1
+        )
+        update message_queue
+        set status = 'processing'
+        where rowid = (select rowid from next_message)
+          and status = 'pending'
+        returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
+      `).get(channelJid)
     : db.prepare(`
-        select rowid, * from message_queue
-        where status = 'pending'
-        order by rowid asc limit 1
-      `);
+        with next_message as (
+          select rowid
+          from message_queue
+          where status = 'pending'
+          order by rowid asc
+          limit 1
+        )
+        update message_queue
+        set status = 'processing'
+        where rowid = (select rowid from next_message)
+          and status = 'pending'
+        returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
+      `).get()) as QueuedMessage | undefined;
 
-  const row = (channelJid ? stmt.get(channelJid) : stmt.get()) as QueuedMessage | undefined;
-  if (!row) return undefined;
-
-  db.prepare("update message_queue set status = 'processing' where rowid = ?").run(row.rowid);
   return row;
 }
 
@@ -174,6 +192,10 @@ export function markMessageDone(rowid: number): void {
 
 export function markMessageFailed(rowid: number): void {
   db.prepare("update message_queue set status = 'failed', processed_at = datetime('now') where rowid = ?").run(rowid);
+}
+
+export function requeueMessage(rowid: number): void {
+  db.prepare("update message_queue set status = 'pending', processed_at = null where rowid = ?").run(rowid);
 }
 
 export function clearPendingMessages(channelJid: string): number {
@@ -194,9 +216,13 @@ export function recoverStuckMessages(): number {
 /** Get channels that have pending messages */
 export function channelsWithPending(): string[] {
   const rows = db.prepare(`
-    select distinct channel_jid from message_queue where status = 'pending' order by rowid asc
+    select channel_jid
+    from message_queue
+    where status = 'pending'
+    group by channel_jid
+    order by min(rowid) asc
   `).all() as any[];
-  return rows.map(r => r.channel_jid);
+  return rows.map((r) => r.channel_jid);
 }
 
 // ── Message log ──
@@ -206,5 +232,7 @@ export function logMessage(channelJid: string, role: string, content: string): v
 }
 
 export function closeDb(): void {
-  if (db) db.close();
+  if (!dbOpen) return;
+  db.close();
+  dbOpen = false;
 }

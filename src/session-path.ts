@@ -41,6 +41,16 @@ export function resolveChannelSessionDir(folder: string): string {
   return sessionDir;
 }
 
+/** Resolve a media directory for a message under a validated channel session directory. */
+export function resolveChannelMediaMessageDir(folder: string, messageId: string): string {
+  const trimmedMessageId = messageId.trim();
+  if (!trimmedMessageId || /[\\/]/u.test(trimmedMessageId) || trimmedMessageId === '.' || trimmedMessageId === '..') {
+    throw new Error(`Invalid media message id: ${messageId}`);
+  }
+
+  return resolve(resolveChannelSessionDir(folder), 'media', `msg-${trimmedMessageId}`);
+}
+
 /** Rotate a channel session directory out of the active path without deleting it. */
 export function rotateChannelSessionDir(folder: string): string | undefined {
   const sessionDir = resolveChannelSessionDir(folder);

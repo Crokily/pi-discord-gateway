@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { type AttachmentMeta } from './attachments.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { downloadAttachments, type AttachmentMeta } from './media.js';
+import { downloadAttachments } from './media.js';
 import {
   readSessionCreatedAt,
   resolveChannelSessionDir,
@@ -68,7 +69,7 @@ export async function invokeAgent(
     try {
       const metas: AttachmentMeta[] = JSON.parse(opts.attachments);
       const messageId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const downloaded = await downloadAttachments(metas, channelFolder, messageId);
+      const downloaded = await downloadAttachments(metas, channelFolder, messageId, opts.signal);
       for (const file of downloaded) {
         args.push(`@${file.filePath}`);
       }
@@ -78,6 +79,14 @@ export async function invokeAgent(
     } catch (err: any) {
       logger.warn({ err: err.message }, 'Failed to process attachments');
     }
+  }
+
+  if (opts?.signal?.aborted) {
+    return {
+      ok: false,
+      text: '',
+      error: 'Agent invocation aborted during shutdown',
+    };
   }
 
   // Prompt (must be last)

@@ -20,7 +20,8 @@ Discord ──discord.js──→ Gateway ──pi subprocess──→ Pi Agent
 - **DM auto-registration** — direct messages work out of the box
 - **Typing indicators** — shows "bot is typing" while pi processes
 - **Message splitting** — handles Discord's 2000-character limit
-- **Attachments & replies** — attachment placeholders and reply context forwarded to pi
+- **Attachments & replies** — attachment-only messages, reply context, streamed downloads, and configurable size limits
+- **Graceful shutdown** — stops polling, stops cleanup timers, drains active work, and aborts stuck agent tasks after a timeout
 - **CLI channel management** — register/unregister channels from the command line
 - **Global slash commands** — `/pi status`, `/pi model`, `/pi reset-model`, `/pi thinking`, `/pi new`
 - **Model autocomplete** — slash command model picker is populated from pi's currently available models
@@ -83,6 +84,7 @@ node dist/index.js
 
 ```bash
 npm run dev   # run with tsx (no build needed)
+npm test      # run lightweight helper tests
 ```
 
 ## Slash Commands
@@ -138,9 +140,13 @@ node dist/index.js help                         # Show help
 | `PI_THINKING` | *(none)* | Optional thinking override. Leave unset to use the normal pi default/settings. |
 | `TRIGGER_NAME` | `Andy` | Name used in trigger pattern (`@Andy`) |
 | `MAX_CONCURRENCY` | `3` | Max parallel pi invocations |
+| `POLL_INTERVAL_MS` | `1000` | Queue poll interval in milliseconds |
+| `SHUTDOWN_TIMEOUT_MS` | `15000` | How long shutdown waits before aborting in-flight agent work |
+| `MAX_ATTACHMENT_BYTES` | `26214400` | Max size of one attachment in bytes. Set `0` to disable the limit. |
+| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800` | Max combined attachment size per Discord message in bytes. Set `0` to disable the limit. |
 | `AUTO_REGISTER_DMS` | `true` | Auto-register DM channels |
-| `SESSIONS_DIR` | `./sessions` | Per-channel session storage |
-| `DB_PATH` | `./gateway.db` | SQLite database path |
+| `SESSIONS_DIR` | `~/pi-discord-gateway/sessions` | Per-channel session storage |
+| `DB_PATH` | `~/pi-discord-gateway/gateway.db` | SQLite database path |
 | `PI_CWD` | `$HOME` | Working directory for pi |
 | `PI_EXTRA_FLAGS` | *(none)* | Extra flags passed to pi |
 | `LOG_LEVEL` | `info` | Log level: debug/info/warn/error |
