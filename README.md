@@ -84,7 +84,6 @@ node dist/index.js
 
 ```bash
 npm run dev   # run with tsx (no build needed)
-npm test      # run lightweight helper tests
 ```
 
 ## Slash Commands
