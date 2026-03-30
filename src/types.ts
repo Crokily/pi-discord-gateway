@@ -2,16 +2,6 @@
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
-/** Inbound message from Discord, ready for queue */
-export interface InboundMessage {
-  id: string;
-  channelJid: string;
-  sender: string;
-  senderName: string;
-  content: string;
-  timestamp: string;
-}
-
 /** A registered channel the gateway will respond in */
 export interface RegisteredChannel {
   jid: string;

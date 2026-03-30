@@ -144,7 +144,10 @@ async function drainActiveTasks(timeoutMs: number): Promise<void> {
   }
 
   if (activeTaskPromises.size > 0) {
-    await Promise.allSettled([...activeTaskPromises]);
+    await Promise.race([
+      Promise.allSettled([...activeTaskPromises]),
+      new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+    ]);
   }
 }
 

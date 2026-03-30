@@ -119,7 +119,7 @@ function cleanupExpiredMedia(): void {
     try {
       const msgDirs = readdirSync(mediaRoot, { withFileTypes: true });
       for (const msgDir of msgDirs) {
-        if (!msgDir.isDirectory()) continue;
+        if (!msgDir.isDirectory() || !msgDir.name.startsWith('msg-')) continue;
 
         const dirPath = join(mediaRoot, msgDir.name);
         try {
@@ -142,20 +142,16 @@ function cleanupExpiredMedia(): void {
   }
 }
 
-function findMediaRoots(rootDir: string): string[] {
-  const mediaRoots: string[] = [];
-  collectMediaRoots(rootDir, mediaRoots);
-  return mediaRoots;
-}
-
-function collectMediaRoots(dirPath: string, mediaRoots: string[]): void {
+function findMediaRoots(dirPath: string): string[] {
   let entries: Dirent[];
 
   try {
     entries = readdirSync(dirPath, { withFileTypes: true });
   } catch {
-    return;
+    return [];
   }
+
+  const mediaRoots: string[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -166,6 +162,8 @@ function collectMediaRoots(dirPath: string, mediaRoots: string[]): void {
       continue;
     }
 
-    collectMediaRoots(entryPath, mediaRoots);
+    mediaRoots.push(...findMediaRoots(entryPath));
   }
+
+  return mediaRoots;
 }

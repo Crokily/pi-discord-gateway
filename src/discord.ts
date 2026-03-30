@@ -19,6 +19,7 @@ import {
 import { config } from './config.js';
 import { logger } from './logger.js';
 import {
+  createDmChannel,
   getChannel,
   registerChannel as dbRegisterChannel,
   enqueueMessage,
@@ -28,7 +29,6 @@ import {
   selectAttachmentsWithinLimits,
   type AttachmentMeta,
 } from './attachments.js';
-import type { RegisteredChannel } from './types.js';
 import { handleAutocomplete, handleChatCommand, registerGlobalCommands } from './slash-commands.js';
 
 let client: Client | null = null;
@@ -180,15 +180,7 @@ async function handleMessage(message: Message): Promise<void> {
 
   // Auto-register DMs
   if (!channel && isDM && config.autoRegisterDMs) {
-    const reg: RegisteredChannel = {
-      jid,
-      name: `DM:${senderName}`,
-      folder: `dm_${sender}`,
-      requiresTrigger: false,
-      isMain: false,
-      modelOverride: '',
-      thinkingOverride: '',
-    };
+    const reg = createDmChannel(jid, sender, senderName);
     dbRegisterChannel(reg);
     channel = reg;
     logger.info({ jid, senderName }, 'Auto-registered DM channel');

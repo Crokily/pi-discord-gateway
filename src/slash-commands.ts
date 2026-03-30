@@ -11,6 +11,7 @@ import { config } from './config.js';
 import {
   clearChannelModelOverride,
   clearPendingMessages,
+  createDmChannel,
   getChannel,
   registerChannel,
   setChannelModelOverride,
@@ -110,7 +111,6 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
   const subcommand = interaction.options.getSubcommand();
 
   try {
-
     switch (subcommand) {
       case 'status':
         await handleStatus(interaction);
@@ -281,15 +281,7 @@ function ensureManagedChannel(interaction: ChatInputCommandInteraction): Registe
 
   // Allow slash commands to bootstrap DM channels, same as normal DM messages.
   if (!interaction.guild && config.autoRegisterDMs) {
-    const reg: RegisteredChannel = {
-      jid,
-      name: `DM:${interaction.user.username}`,
-      folder: `dm_${interaction.user.id}`,
-      requiresTrigger: false,
-      isMain: false,
-      modelOverride: '',
-      thinkingOverride: '',
-    };
+    const reg = createDmChannel(jid, interaction.user.id, interaction.user.username);
     registerChannel(reg);
     return getChannel(jid) ?? reg;
   }

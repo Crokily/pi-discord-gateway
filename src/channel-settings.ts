@@ -43,17 +43,23 @@ export function computeEffectiveChannelSettings(
   const desiredThinking = getDesiredThinkingLevel(channel);
   const thinkingResolution = resolveThinkingForModel(modelInfo, desiredThinking);
 
-  const modelSource = channel.modelOverride
-    ? 'override'
-    : config.piModel
-      ? 'default'
-      : 'pi runtime default';
+  let modelSource: EffectiveChannelSettings['modelSource'];
+  if (channel.modelOverride) {
+    modelSource = 'override';
+  } else if (config.piModel) {
+    modelSource = 'default';
+  } else {
+    modelSource = 'pi runtime default';
+  }
 
-  const thinkingSource = channel.thinkingOverride
-    ? 'override'
-    : config.piThinking && isThinkingLevel(config.piThinking)
-      ? 'default'
-      : 'pi runtime default';
+  let thinkingSource: EffectiveChannelSettings['thinkingSource'];
+  if (channel.thinkingOverride) {
+    thinkingSource = 'override';
+  } else if (config.piThinking && isThinkingLevel(config.piThinking)) {
+    thinkingSource = 'default';
+  } else {
+    thinkingSource = 'pi runtime default';
+  }
 
   return {
     rawModelRef,

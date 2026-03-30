@@ -104,6 +104,18 @@ export function getAllChannels(): RegisteredChannel[] {
   return rows.map(rowToChannel);
 }
 
+export function createDmChannel(jid: string, userId: string, displayName: string): RegisteredChannel {
+  return {
+    jid,
+    name: `DM:${displayName}`,
+    folder: `dm_${userId}`,
+    requiresTrigger: false,
+    isMain: false,
+    modelOverride: '',
+    thinkingOverride: '',
+  };
+}
+
 export function setChannelModelOverride(jid: string, modelOverride: string): boolean {
   const result = db.prepare('update channels set model_override = ? where jid = ?').run(modelOverride.trim(), jid);
   return result.changes > 0;
@@ -152,36 +164,21 @@ export function enqueueMessage(msg: {
   `).run(msg.channelJid, msg.sender, msg.senderName, msg.content, msg.timestamp, msg.attachments ?? null);
 }
 
-export function claimNextMessage(channelJid?: string): QueuedMessage | undefined {
-  const row = (channelJid
-    ? db.prepare(`
-        with next_message as (
-          select rowid
-          from message_queue
-          where status = 'pending' and channel_jid = ?
-          order by rowid asc
-          limit 1
-        )
-        update message_queue
-        set status = 'processing'
-        where rowid = (select rowid from next_message)
-          and status = 'pending'
-        returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
-      `).get(channelJid)
-    : db.prepare(`
-        with next_message as (
-          select rowid
-          from message_queue
-          where status = 'pending'
-          order by rowid asc
-          limit 1
-        )
-        update message_queue
-        set status = 'processing'
-        where rowid = (select rowid from next_message)
-          and status = 'pending'
-        returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
-      `).get()) as QueuedMessage | undefined;
+export function claimNextMessage(channelJid: string): QueuedMessage | undefined {
+  const row = db.prepare(`
+    with next_message as (
+      select rowid
+      from message_queue
+      where status = 'pending' and channel_jid = ?
+      order by rowid asc
+      limit 1
+    )
+    update message_queue
+    set status = 'processing'
+    where rowid = (select rowid from next_message)
+      and status = 'pending'
+    returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
+  `).get(channelJid) as QueuedMessage | undefined;
 
   return row;
 }
@@ -197,11 +194,6 @@ export function markMessageFailed(rowid: number): void {
 export function clearPendingMessages(channelJid: string): number {
   const result = db.prepare("delete from message_queue where channel_jid = ? and status = 'pending'").run(channelJid);
   return result.changes;
-}
-
-export function countPendingMessages(): number {
-  const row = db.prepare("select count(*) as cnt from message_queue where status = 'pending'").get() as any;
-  return row.cnt;
 }
 
 export function recoverStuckMessages(): number {
