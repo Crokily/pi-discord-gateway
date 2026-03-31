@@ -1,0 +1,102 @@
+{
+  "project": "pi-discord-gateway",
+  "branchName": "ralph/gateway-v2-enhancements",
+  "description": "Five quality-of-life improvements: open channel policy, abort command, archive cleanup, scheduled tasks, and file-sending CLI tool.",
+  "qualityChecks": {
+    "typecheck": "npx tsc --noEmit",
+    "test": "npm test",
+    "build": "npm run build"
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Channel access policy — config, DB, and auto-register logic",
+      "description": "As a gateway operator, I want to choose an open, open-trigger, or allowlist channel policy so that guild channels are automatically available without manual registration.",
+      "acceptanceCriteria": [
+        "CHANNEL_POLICY env var accepted with values open, open-trigger, allowlist (default allowlist)",
+        "config.ts exposes channelPolicy field",
+        "setup.ts wizard includes Channel Policy step",
+        "EXCLUDED_CHANNELS env var accepted as comma-separated channel IDs",
+        "discord.ts handleMessage auto-registers unregistered guild channels when policy is open or open-trigger",
+        "Auto-registered channels derive name from guild.name #channel.name, folder from ch_<id>, requiresTrigger from policy",
+        "Excluded channels are never auto-registered",
+        "Existing allowlist behavior unchanged",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Abort / cancel command",
+      "description": "As a Discord user, I want a /pi stop slash command to abort the currently running pi invocation and clear queued messages.",
+      "acceptanceCriteria": [
+        "queue.ts exports abortChannelTask(jid) that aborts active controller and clears pending messages",
+        "slash-commands.ts registers stop subcommand on /pi command",
+        "Active task aborted with confirmation message and cleared count",
+        "No active task case handled with informative message",
+        "Agent process receives SIGTERM via existing abort path",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Archived session auto-cleanup",
+      "description": "As a gateway operator, I want archived sessions automatically deleted after a configurable retention period.",
+      "acceptanceCriteria": [
+        "ARCHIVE_RETENTION_DAYS env var (default 30, 0 = never clean)",
+        "config.ts exposes archiveRetentionDays",
+        "cleanupArchivedSessions() scans sessionsDir for __archived_<timestamp> dirs and deletes expired ones",
+        "Cleanup runs on 24-hour interval in gateway lifecycle",
+        "piscord archive cleanup [--dry-run] CLI command",
+        "piscord archive list CLI command",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Scheduled tasks — DB schema, scheduler engine, and CLI",
+      "description": "As a pi agent, I want to create, list, enable, disable, and remove scheduled tasks via CLI so the gateway executes prompts on schedule.",
+      "acceptanceCriteria": [
+        "scheduled_tasks table with id, name, type, schedule, channel_jid, prompt, enabled, last_run_at, next_run_at, created_at, created_by",
+        "DB functions: addTask, removeTask, enableTask, disableTask, listTasks, updateTaskAfterRun",
+        "scheduler.ts checks every 30s for due tasks and enqueues them",
+        "Cron parsing via croner library",
+        "MAX_SCHEDULED_CONCURRENCY config (default 1)",
+        "Scheduler lifecycle integrated in index.ts",
+        "CLI commands: task add, task list, task remove, task enable, task disable",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Send-file tool — CLI command for pi to send files to Discord",
+      "description": "As a pi agent, I want a CLI command to send files with optional text to a Discord channel.",
+      "acceptanceCriteria": [
+        "piscord send --channel <jid> --text <message> --file <path> CLI command",
+        "Uses Discord REST API directly with bot token from config (no IPC needed)",
+        "File size limits respected (MAX_ATTACHMENT_BYTES, max 10 files)",
+        "Text is optional alongside files",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

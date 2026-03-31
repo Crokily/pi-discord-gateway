@@ -1,0 +1,14 @@
+## Codebase Patterns
+- ESM modules with `.js` extensions in imports
+- Config via env vars with defaults in `config.ts` using `env()`, `envInt()`, `envBool()` helpers
+- SQLite via `better-sqlite3`; schema in `initDb()` with `ensureTableColumn()` for migrations
+- CLI commands dispatched in `cli.ts` via switch/case on first arg
+- Slash commands on the single `/pi` command with subcommands
+- Tests in `test/` directory using vitest; test files match `*.test.ts`
+- All Discord channel JIDs use `dc:<channelId>` format
+- Per-channel serial processing enforced by `activeChannels` Set in `queue.ts`
+- `AbortController` per active task stored in `activeTaskControllers` Map keyed by rowid
+- Session directories under `config.sessionsDir`, archived with `__archived_<timestamp>` suffix
+- `startGateway()` in `index.ts` orchestrates lifecycle: initDb → startDiscord → startProcessingLoop → startMediaCleanup
+- Setup wizard uses readline/promises for interactive prompts
+---
