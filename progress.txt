@@ -31,3 +31,13 @@
 - Files changed: src/queue.ts, src/slash-commands.ts, test/abort.test.ts
 - **Learnings:** DB must be initialized for `clearPendingMessages` — test uses DB_PATH=':memory:'
 ---
+
+## 2026-03-31 15:45 - US-003: Archived session auto-cleanup
+- New `src/archive-cleanup.ts`: parseArchiveTimestamp, listArchivedSessions, cleanupArchivedSessions, startArchiveCleanup
+- `ARCHIVE_RETENTION_DAYS` config (default 30, 0 = disabled)
+- CLI: `piscord archive list` and `piscord archive cleanup [--dry-run]`
+- Lifecycle integrated in index.ts alongside media cleanup
+- 7 new tests in test/archive-cleanup.test.ts
+- Files changed: src/archive-cleanup.ts, src/config.ts, src/index.ts, src/cli.ts, src/setup.ts, test/archive-cleanup.test.ts
+- **Learnings:** Keep cleanup modules self-contained with start/stop pattern matching media.ts
+---

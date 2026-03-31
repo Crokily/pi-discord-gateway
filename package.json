@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "croner": "^10.0.1",
     "discord.js": "^14.18.0",
     "dotenv": "^16.5.0",
     "pino": "^9.6.0",

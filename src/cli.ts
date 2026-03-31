@@ -32,6 +32,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case 'archive':
       await cliArchive(args);
       return 0;
+    case 'task':
+      await cliTask(args);
+      return 0;
     case 'channels':
       await cliListChannels();
       return 0;
@@ -83,6 +86,11 @@ export function formatHelpText(): string {
     '  piscord status                                Show local diagnostics',
     '  piscord archive list                          List archived sessions',
     '  piscord archive cleanup [--dry-run]           Clean up archived sessions now',
+    '  piscord task add --name <n> --schedule <expr> --channel <jid> --prompt <text> [--once]',
+    '  piscord task list                             List scheduled tasks',
+    '  piscord task remove <id>                      Remove a scheduled task',
+    '  piscord task enable <id>                      Enable a scheduled task',
+    '  piscord task disable <id>                     Disable a scheduled task',
     '  piscord channels                              List registered channels',
     '  piscord register <id> <name> [opts]          Register a Discord channel',
     '  piscord unregister <id>                       Unregister a channel',
@@ -92,14 +100,15 @@ export function formatHelpText(): string {
     '  piscord daemon stop                           Stop systemd service',
     '  piscord daemon status                         Show systemd service status',
     '  piscord daemon logs                           Tail systemd journal logs',
-    '  piscord archive list                           List archived sessions',
-    '  piscord archive cleanup [--dry-run]            Clean up expired archives',
     '  piscord help                                  Show this help',
     '',
     'REGISTER OPTIONS:',
     '  --folder <name>    Relative session folder name (default: ch_<id>)',
     '  --no-trigger       Respond to all messages (not just @mentions)',
     '  --main             Mark as main channel (implies --no-trigger)',
+    '',
+    'TASK OPTIONS:',
+    '  --once             Treat --schedule as a one-time ISO datetime',
   ].join('\n');
 }
 
@@ -149,53 +158,42 @@ async function cliUnregister(args: string[]): Promise<void> {
 }
 
 async function cliArchive(args: string[]): Promise<void> {
-  const subcommand = args[0];
+  const [subcommand, ...subArgs] = args;
 
-  if (subcommand === 'list') {
-    const { listArchivedSessions } = await import('./archive-cleanup.js');
-    const { config } = await import('./config.js');
-    const sessions = listArchivedSessions(config.sessionsDir);
-
-    if (sessions.length === 0) {
-      console.log('No archived sessions.');
+  switch (subcommand) {
+    case 'list':
+      await cliArchiveList();
       return;
-    }
-
-    console.log(`Archived sessions (${sessions.length}):\n`);
-    const now = Date.now();
-    for (const s of sessions) {
-      const ageDays = Math.floor((now - s.archivedAt.getTime()) / (24 * 60 * 60 * 1000));
-      console.log(`  ${s.name}  (${ageDays}d ago)`);
-    }
-    return;
-  }
-
-  if (subcommand === 'cleanup') {
-    const { cleanupArchivedSessions } = await import('./archive-cleanup.js');
-    const { config } = await import('./config.js');
-    const dryRun = args.includes('--dry-run');
-    const retention = config.archiveRetentionDays;
-
-    if (retention === 0) {
-      console.log('Archive cleanup is disabled (ARCHIVE_RETENTION_DAYS=0).');
+    case 'cleanup':
+      await cliArchiveCleanup(subArgs);
       return;
-    }
-
-    const result = cleanupArchivedSessions(config.sessionsDir, retention, { dryRun });
-
-    if (result.deleted.length === 0) {
-      console.log('No expired archives to clean up.');
-    } else {
-      const verb = dryRun ? 'Would delete' : 'Deleted';
-      console.log(`${verb} ${result.deleted.length} archived session(s):`);
-      for (const name of result.deleted) {
-        console.log(`  ${name}`);
-      }
-    }
-    return;
+    default:
+      throw new Error('Usage: piscord archive <list|cleanup [--dry-run]>');
   }
+}
 
-  throw new Error('Usage: piscord archive <list|cleanup> [--dry-run]');
+async function cliTask(args: string[]): Promise<void> {
+  const [subcommand, ...subArgs] = args;
+
+  switch (subcommand) {
+    case 'add':
+      await cliAddTask(subArgs);
+      return;
+    case 'list':
+      await cliListTasks();
+      return;
+    case 'remove':
+      await cliRemoveTask(subArgs);
+      return;
+    case 'enable':
+      await cliEnableTask(subArgs);
+      return;
+    case 'disable':
+      await cliDisableTask(subArgs);
+      return;
+    default:
+      throw new Error('Usage: piscord task <add|list|remove|enable|disable> [options]');
+  }
 }
 
 async function cliListChannels(): Promise<void> {
@@ -211,6 +209,129 @@ async function cliListChannels(): Promise<void> {
       console.log(formatChannelSummary(channel));
     }
   });
+}
+
+async function cliAddTask(args: string[]): Promise<void> {
+  const options = parseTaskAddOptions(args);
+  const { computeNextRun } = await import('./scheduler.js');
+  const nextRunAt = computeNextRun(options.schedule, options.type);
+
+  if (!nextRunAt) {
+    throw new Error('Schedule does not produce a future run time.');
+  }
+
+  await withDb(({ addScheduledTask }) => {
+    const id = addScheduledTask({
+      name: options.name,
+      type: options.type,
+      schedule: options.schedule,
+      channelJid: toDiscordChannelJid(options.channel),
+      prompt: options.prompt,
+      createdBy: 'cli',
+      nextRunAt,
+    });
+
+    console.log(`Scheduled task added: ${id}`);
+  });
+}
+
+async function cliListTasks(): Promise<void> {
+  await withDb(({ listScheduledTasks }) => {
+    const tasks = listScheduledTasks();
+    if (tasks.length === 0) {
+      console.log('No scheduled tasks.');
+      return;
+    }
+
+    console.table(tasks.map((task) => ({
+      id: task.id,
+      name: task.name,
+      type: task.type,
+      schedule: task.schedule,
+      channel: task.channel_jid,
+      enabled: task.enabled,
+      next_run_at: task.next_run_at ?? '',
+    })));
+  });
+}
+
+async function cliRemoveTask(args: string[]): Promise<void> {
+  const id = parseTaskId(args[0], 'Usage: piscord task remove <id>');
+
+  await withDb(({ removeScheduledTask }) => {
+    const removed = removeScheduledTask(id);
+    console.log(removed ? `Removed scheduled task: ${id}` : `Scheduled task not found: ${id}`);
+  });
+}
+
+async function cliEnableTask(args: string[]): Promise<void> {
+  const id = parseTaskId(args[0], 'Usage: piscord task enable <id>');
+
+  await withDb(({ enableScheduledTask }) => {
+    const enabled = enableScheduledTask(id);
+    console.log(enabled ? `Enabled scheduled task: ${id}` : `Scheduled task not found: ${id}`);
+  });
+}
+
+async function cliDisableTask(args: string[]): Promise<void> {
+  const id = parseTaskId(args[0], 'Usage: piscord task disable <id>');
+
+  await withDb(({ disableScheduledTask }) => {
+    const disabled = disableScheduledTask(id);
+    console.log(disabled ? `Disabled scheduled task: ${id}` : `Scheduled task not found: ${id}`);
+  });
+}
+
+async function cliArchiveList(): Promise<void> {
+  const [{ listArchivedSessions }, { config }] = await Promise.all([
+    import('./archive-cleanup.js'),
+    import('./config.js'),
+  ]);
+
+  const archivedSessions = listArchivedSessions(config.sessionsDir);
+  if (archivedSessions.length === 0) {
+    console.log(`No archived sessions found in ${config.sessionsDir}.`);
+    return;
+  }
+
+  const now = Date.now();
+  console.log(`Archived sessions (${archivedSessions.length}) in ${config.sessionsDir}:\n`);
+
+  for (const archived of archivedSessions) {
+    console.log(
+      `  ${archived.name}  archived=${archived.archivedAt.toISOString()}  age=${formatAge(archived.archivedAt, now)}`,
+    );
+  }
+}
+
+async function cliArchiveCleanup(args: string[]): Promise<void> {
+  const dryRun = args.includes('--dry-run');
+  const unknownArgs = args.filter((arg) => arg !== '--dry-run');
+  if (unknownArgs.length > 0) {
+    throw new Error('Usage: piscord archive cleanup [--dry-run]');
+  }
+
+  const [{ cleanupArchivedSessions }, { config }] = await Promise.all([
+    import('./archive-cleanup.js'),
+    import('./config.js'),
+  ]);
+
+  if (config.archiveRetentionDays === 0) {
+    console.log('Archive cleanup is disabled (ARCHIVE_RETENTION_DAYS=0).');
+    return;
+  }
+
+  const result = cleanupArchivedSessions(config.sessionsDir, config.archiveRetentionDays, { dryRun });
+  if (result.deleted.length === 0) {
+    console.log(`No archived sessions ${dryRun ? 'would be deleted' : 'were deleted'}.`);
+  } else {
+    console.log(`${dryRun ? 'Would delete' : 'Deleted'} ${result.deleted.length} archived session directories:`);
+    for (const deleted of result.deleted) {
+      console.log(`  ${deleted}`);
+    }
+  }
+
+  console.log(`Skipped ${result.skipped} archived ${result.skipped === 1 ? 'session' : 'sessions'}.`);
 }
 
 async function reportError(command: string | undefined, err: unknown): Promise<void> {
@@ -253,6 +374,23 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function formatAge(date: Date, now = Date.now()): string {
+  const diff = Math.max(0, now - date.getTime());
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  }
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+
+  return `${minutes}m`;
+}
+
 async function withDb<T>(operation: (db: DbModule) => T | Promise<T>): Promise<T> {
   const db = await import('./db.js');
   db.initDb();
@@ -293,6 +431,75 @@ function parseRegisterOptions(
   }
 
   return options;
+}
+
+function parseTaskAddOptions(args: string[]): {
+  name: string;
+  type: 'once' | 'recurring';
+  schedule: string;
+  channel: string;
+  prompt: string;
+} {
+  const options: {
+    name?: string;
+    type: 'once' | 'recurring';
+    schedule?: string;
+    channel?: string;
+    prompt?: string;
+  } = {
+    type: 'recurring',
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case '--name':
+        options.name = args[++i];
+        break;
+      case '--schedule':
+        options.schedule = args[++i];
+        break;
+      case '--channel':
+        options.channel = args[++i];
+        break;
+      case '--prompt':
+        options.prompt = args[++i];
+        break;
+      case '--once':
+        options.type = 'once';
+        break;
+      default:
+        throw new Error(
+          'Usage: piscord task add --name <n> --schedule <cron|iso> --channel <jid> --prompt <text> [--once]',
+        );
+    }
+  }
+
+  if (!options.name || !options.schedule || !options.channel || !options.prompt) {
+    throw new Error(
+      'Usage: piscord task add --name <n> --schedule <cron|iso> --channel <jid> --prompt <text> [--once]',
+    );
+  }
+
+  return {
+    name: options.name,
+    type: options.type,
+    schedule: options.schedule,
+    channel: options.channel,
+    prompt: options.prompt,
+  };
+}
+
+function parseTaskId(raw: string | undefined, usage: string): number {
+  if (!raw) {
+    throw new Error(usage);
+  }
+
+  const id = Number.parseInt(raw, 10);
+  if (Number.isNaN(id)) {
+    throw new Error(usage);
+  }
+
+  return id;
 }
 
 function formatChannelSummary(channel: RegisteredChannel): string {

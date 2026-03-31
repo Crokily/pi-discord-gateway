@@ -5,6 +5,7 @@ import { startDiscord, stopDiscord, getBotTag } from './discord.js';
 import { startArchiveCleanup } from './archive-cleanup.js';
 import { startMediaCleanup } from './media.js';
 import { startProcessingLoop, stopProcessingLoop } from './queue.js';
+import { startScheduler } from './scheduler.js';
 
 /**
  * pi-discord-gateway - Lightweight Discord gateway for pi coding agent.
@@ -21,6 +22,7 @@ export async function startGateway(): Promise<void> {
 
   let stopArchiveCleanup = () => {};
   let stopMediaCleanup = () => {};
+  let stopScheduler = () => {};
   let processingStarted = false;
   let shutdownPromise: Promise<void> | null = null;
 
@@ -42,6 +44,7 @@ export async function startGateway(): Promise<void> {
 
       logger.info({ reason }, 'Shutting down gateway');
 
+      stopScheduler();
       stopArchiveCleanup();
       stopMediaCleanup();
 
@@ -68,6 +71,7 @@ export async function startGateway(): Promise<void> {
 
     startProcessingLoop();
     processingStarted = true;
+    stopScheduler = startScheduler();
     stopArchiveCleanup = startArchiveCleanup();
     stopMediaCleanup = startMediaCleanup();
 
@@ -75,6 +79,7 @@ export async function startGateway(): Promise<void> {
       bot: getBotTag(),
       trigger: `@${config.triggerName}`,
       concurrency: config.maxConcurrency,
+      scheduledConcurrency: config.maxScheduledConcurrency,
       sessionsDir: config.sessionsDir,
     }, 'Gateway running');
 

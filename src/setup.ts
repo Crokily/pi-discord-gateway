@@ -146,6 +146,7 @@ export function buildConfigFile(options: {
     '# Gateway behavior',
     `TRIGGER_NAME=${options.triggerName}`,
     'MAX_CONCURRENCY=3',
+    'MAX_SCHEDULED_CONCURRENCY=1',
     'POLL_INTERVAL_MS=1000',
     'SHUTDOWN_TIMEOUT_MS=15000',
     'AUTO_REGISTER_DMS=true',

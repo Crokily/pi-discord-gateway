@@ -8,6 +8,22 @@ import { type RegisteredChannel, type QueuedMessage, type ThinkingLevel } from '
 let db!: Database.Database;
 let dbOpen = false;
 
+export type ScheduledTaskType = 'once' | 'recurring';
+
+export interface ScheduledTaskRow {
+  id: number;
+  name: string;
+  type: ScheduledTaskType;
+  schedule: string;
+  channel_jid: string;
+  prompt: string;
+  enabled: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  created_by: string;
+}
+
 export function initDb(): void {
   if (dbOpen) return;
 
@@ -50,6 +66,22 @@ export function initDb(): void {
       content       text not null,
       timestamp     text not null default (datetime('now'))
     );
+
+    create table if not exists scheduled_tasks (
+      id           integer primary key autoincrement,
+      name         text not null,
+      type         text not null check(type in ('once', 'recurring')),
+      schedule     text not null,
+      channel_jid  text not null,
+      prompt       text not null,
+      enabled      integer not null default 1,
+      last_run_at  text,
+      next_run_at  text,
+      created_at   text not null default (datetime('now')),
+      created_by   text not null default ''
+    );
+
+    create index if not exists idx_scheduled_tasks_due on scheduled_tasks(enabled, next_run_at);
   `);
 
   ensureTableColumn('channels', 'model_override', "text not null default ''");
@@ -64,6 +96,19 @@ function ensureTableColumn(table: string, column: string, ddl: string): void {
   if (rows.some((row) => row.name === column)) return;
   db.exec(`alter table ${table} add column ${column} ${ddl}`);
   logger.info({ table, column }, 'Database migrated: added column');
+}
+
+function normalizeTimestamp(timestamp: string | null): string | null {
+  if (timestamp === null) {
+    return null;
+  }
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp;
+  }
+
+  return parsed.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 // ── Channel registration ──
@@ -211,6 +256,77 @@ export function channelsWithPending(): string[] {
     order by min(rowid) asc
   `).all() as any[];
   return rows.map((r) => r.channel_jid);
+}
+
+// ── Scheduled tasks ──
+
+export function addScheduledTask(task: {
+  name: string;
+  type: ScheduledTaskType;
+  schedule: string;
+  channelJid: string;
+  prompt: string;
+  createdBy?: string;
+  nextRunAt: string;
+}): number {
+  const result = db.prepare(`
+    insert into scheduled_tasks (name, type, schedule, channel_jid, prompt, created_by, next_run_at)
+    values (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    task.name,
+    task.type,
+    task.schedule,
+    task.channelJid,
+    task.prompt,
+    task.createdBy ?? '',
+    normalizeTimestamp(task.nextRunAt),
+  );
+
+  return Number(result.lastInsertRowid);
+}
+
+export function removeScheduledTask(id: number): boolean {
+  const result = db.prepare('delete from scheduled_tasks where id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function enableScheduledTask(id: number): boolean {
+  const result = db.prepare('update scheduled_tasks set enabled = 1 where id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function disableScheduledTask(id: number): boolean {
+  const result = db.prepare('update scheduled_tasks set enabled = 0 where id = ?').run(id);
+  return result.changes > 0;
+}
+
+export function listScheduledTasks(): ScheduledTaskRow[] {
+  return db.prepare(`
+    select id, name, type, schedule, channel_jid, prompt, enabled, last_run_at, next_run_at, created_at, created_by
+    from scheduled_tasks
+    order by id asc
+  `).all() as ScheduledTaskRow[];
+}
+
+export function getDueScheduledTasks(): ScheduledTaskRow[] {
+  return db.prepare(`
+    select id, name, type, schedule, channel_jid, prompt, enabled, last_run_at, next_run_at, created_at, created_by
+    from scheduled_tasks
+    where enabled = 1
+      and next_run_at is not null
+      and next_run_at <= datetime('now')
+    order by next_run_at asc, id asc
+  `).all() as ScheduledTaskRow[];
+}
+
+export function updateTaskAfterRun(id: number, lastRunAt: string, nextRunAt: string | null): void {
+  db.prepare(`
+    update scheduled_tasks
+    set last_run_at = ?,
+        next_run_at = ?,
+        enabled = case when ? is null then 0 else enabled end
+    where id = ?
+  `).run(normalizeTimestamp(lastRunAt), normalizeTimestamp(nextRunAt), nextRunAt, id);
 }
 
 // ── Message log ──
