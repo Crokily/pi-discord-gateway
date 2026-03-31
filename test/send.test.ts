@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeChannelJid, validateSendRequest, type SendRequest } from '../src/send.js';
+import { normalizeChannelJid, validateSendRequest, type SendRequest } from '../src/discord/send.js';
 
 function request(files: string[]): SendRequest {
   return {

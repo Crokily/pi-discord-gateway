@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveConfigPath } from './config.js';
+import { resolveConfigPath } from '../config.js';
 
 const SERVICE_NAME = 'pi-discord-gateway';
 const SYSTEMD_USER_DIR = resolve(homedir(), '.config/systemd/user');
@@ -108,8 +108,8 @@ function quoteForSystemd(value: string): string {
 
 function resolveCliPath(): string {
   const candidates = [
-    fileURLToPath(new URL('./cli.js', import.meta.url)),
-    fileURLToPath(new URL('../dist/cli.js', import.meta.url)),
+    fileURLToPath(new URL('./index.js', import.meta.url)),
+    fileURLToPath(new URL('../../dist/cli/index.js', import.meta.url)),
   ];
 
   for (const candidate of candidates) {
@@ -118,5 +118,5 @@ function resolveCliPath(): string {
     }
   }
 
-  throw new Error('Unable to resolve cli.js path for systemd service installation.');
+  throw new Error('Unable to resolve cli/index.js path for systemd service installation.');
 }

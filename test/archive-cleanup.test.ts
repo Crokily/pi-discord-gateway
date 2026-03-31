@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanupArchivedSessions, listArchivedSessions, parseArchiveTimestamp } from '../src/archive-cleanup.js';
+import { cleanupArchivedSessions, listArchivedSessions, parseArchiveTimestamp } from '../src/session/archive-cleanup.js';
 
 const tempDirs: string[] = [];
 

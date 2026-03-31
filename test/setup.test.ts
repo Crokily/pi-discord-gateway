@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildConfigFile } from '../src/setup.js';
+import { buildConfigFile } from '../src/cli/setup.js';
 
 describe('buildConfigFile', () => {
   it('includes the generated token and local path settings', () => {

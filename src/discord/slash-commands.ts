@@ -6,8 +6,8 @@ import {
   type Client,
   type InteractionReplyOptions,
 } from 'discord.js';
-import { getChannelSessionStatus, type ChannelSessionStatus, type SessionContextUsage, type SessionTokenUsage } from './agent.js';
-import { config } from './config.js';
+import { getChannelSessionStatus, type ChannelSessionStatus, type SessionContextUsage, type SessionTokenUsage } from '../agent/invoke.js';
+import { config } from '../config.js';
 import {
   clearChannelModelOverride,
   clearPendingMessages,
@@ -16,8 +16,8 @@ import {
   registerChannel,
   setChannelModelOverride,
   setChannelThinkingOverride,
-} from './db.js';
-import { logger } from './logger.js';
+} from '../db.js';
+import { logger } from '../logger.js';
 import {
   autocompleteModels,
   isThinkingLevel,
@@ -25,16 +25,16 @@ import {
   resolveModelReference,
   resolveThinkingForModel,
   toModelChoiceName,
-} from './model-catalog.js';
+} from '../agent/model-catalog.js';
 import {
   buildThinkingAdjustmentMessage,
   computeEffectiveChannelSettings,
   getDesiredThinkingLevel,
   type EffectiveChannelSettings,
-} from './channel-settings.js';
-import { abortChannelTask, isChannelProcessing } from './queue.js';
-import { rotateChannelSessionDir } from './session-path.js';
-import type { RegisteredChannel } from './types.js';
+} from '../agent/channel-settings.js';
+import { abortChannelTask, isChannelProcessing } from '../agent/queue.js';
+import { rotateChannelSessionDir } from '../session/path.js';
+import type { RegisteredChannel } from '../types.js';
 
 const PI_COMMAND = new SlashCommandBuilder()
   .setName('pi')

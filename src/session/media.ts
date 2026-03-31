@@ -11,10 +11,10 @@ import { rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { type AttachmentMeta } from './attachments.js';
-import { config } from './config.js';
-import { logger } from './logger.js';
-import { resolveChannelMediaMessageDir } from './session-path.js';
+import { type AttachmentMeta } from '../discord/attachments.js';
+import { config } from '../config.js';
+import { logger } from '../logger.js';
+import { resolveChannelMediaMessageDir } from './path.js';
 
 /** A successfully downloaded file */
 export interface DownloadedFile {

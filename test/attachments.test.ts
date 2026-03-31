@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectAttachmentsWithinLimits, type AttachmentMeta } from '../src/attachments.js';
+import { selectAttachmentsWithinLimits, type AttachmentMeta } from '../src/discord/attachments.js';
 
 function attachment(name: string, size: number): AttachmentMeta {
   return {

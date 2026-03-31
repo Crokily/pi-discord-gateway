@@ -2,8 +2,8 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { config, resolveConfigPath } from './config.js';
-import { closeDb, getAllChannels, initDb } from './db.js';
+import { config, resolveConfigPath } from '../config.js';
+import { closeDb, getAllChannels, initDb } from '../db.js';
 
 const AUTH_PATH = resolve(homedir(), '.pi/agent/auth.json');
 const SERVICE_NAME = 'pi-discord-gateway';

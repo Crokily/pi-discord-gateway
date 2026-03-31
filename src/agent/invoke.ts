@@ -1,15 +1,15 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { type AttachmentMeta } from './attachments.js';
-import { config } from './config.js';
-import { logger } from './logger.js';
-import { downloadAttachments } from './media.js';
+import { type AttachmentMeta } from '../discord/attachments.js';
+import { config } from '../config.js';
+import { logger } from '../logger.js';
+import { downloadAttachments } from '../session/media.js';
 import {
   readSessionCreatedAt,
   resolveChannelSessionDir,
   resolveLatestChannelSessionFile,
-} from './session-path.js';
-import type { AgentResult } from './types.js';
+} from '../session/path.js';
+import type { AgentResult } from '../types.js';
 
 export interface SessionTokenUsage {
   input: number;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateSessionFolder } from '../src/session-path.js';
+import { validateSessionFolder } from '../src/session/path.js';
 
 describe('validateSessionFolder', () => {
   it('accepts valid relative folder names', () => {

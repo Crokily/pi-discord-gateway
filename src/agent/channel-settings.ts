@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config } from '../config.js';
 import {
   isThinkingLevel,
   listAvailableModels,
@@ -6,7 +6,7 @@ import {
   resolveThinkingForModel,
   type AvailableModelInfo,
 } from './model-catalog.js';
-import type { RegisteredChannel, ThinkingLevel } from './types.js';
+import type { RegisteredChannel, ThinkingLevel } from '../types.js';
 
 export interface EffectiveChannelSettings {
   rawModelRef: string;

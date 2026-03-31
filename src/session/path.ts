@@ -1,6 +1,6 @@
 import { closeSync, existsSync, openSync, readSync, readdirSync, renameSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
-import { config } from './config.js';
+import { config } from '../config.js';
 
 /**
  * Validate a channel session folder name.

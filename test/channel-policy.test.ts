@@ -60,7 +60,7 @@ describe('channel policy config', () => {
 
 describe('buildConfigFile channel policy settings', () => {
   it('includes channel policy and excluded channels placeholders', async () => {
-    const { buildConfigFile } = await import('../src/setup.js')
+    const { buildConfigFile } = await import('../src/cli/setup.js')
     const text = buildConfigFile({
       token: 'discord-token',
       triggerName: 'PiBot',

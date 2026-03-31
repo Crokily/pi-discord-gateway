@@ -1,6 +1,6 @@
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent';
 import { supportsXhigh, type Model } from '@mariozechner/pi-ai';
-import { THINKING_LEVELS, type ThinkingLevel } from './types.js';
+import { THINKING_LEVELS, type ThinkingLevel } from '../types.js';
 
 const CACHE_TTL_MS = 30_000;
 

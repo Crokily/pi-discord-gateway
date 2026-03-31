@@ -1,12 +1,12 @@
 import { Cron } from 'croner';
-import { config } from './config.js';
+import { config } from '../config.js';
 import {
   enqueueScheduledTask,
   getDueScheduledTasks,
   type ScheduledTaskRow,
   type ScheduledTaskType,
-} from './db.js';
-import { logger } from './logger.js';
+} from '../db.js';
+import { logger } from '../logger.js';
 
 const SCHEDULER_INTERVAL_MS = 30_000;
 

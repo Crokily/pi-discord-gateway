@@ -2,7 +2,7 @@ import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { AttachmentBuilder, Client, GatewayIntentBits } from 'discord.js';
-import { config } from './config.js';
+import { config } from '../config.js';
 
 export interface SendRequest {
   channelJid: string;

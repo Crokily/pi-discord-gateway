@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatHelpText } from '../src/cli.js';
+import { formatHelpText } from '../src/cli/index.js';
 
 describe('formatHelpText', () => {
   it('mentions the primary distribution commands', () => {

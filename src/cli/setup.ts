@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { listAvailableModels } from './model-catalog.js';
-import { resolveConfigPath } from './config.js';
+import { listAvailableModels } from '../agent/model-catalog.js';
+import { resolveConfigPath } from '../config.js';
 
 const DEFAULT_TRIGGER_NAME = 'Andy';
 const DEFAULT_WORKING_DIR = homedir();

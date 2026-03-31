@@ -13,7 +13,7 @@ beforeAll(async () => {
   db.initDb();
   closeDb = db.closeDb;
 
-  ({ abortChannelTask } = await import('../src/queue.js'));
+  ({ abortChannelTask } = await import('../src/agent/queue.js'));
 });
 
 afterAll(() => {

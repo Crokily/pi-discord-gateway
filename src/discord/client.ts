@@ -16,15 +16,15 @@ import {
   type TextChannel,
   type DMChannel,
 } from 'discord.js';
-import { type RegisteredChannel } from './types.js';
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { type RegisteredChannel } from '../types.js';
+import { config } from '../config.js';
+import { logger } from '../logger.js';
 import {
   createDmChannel,
   getChannel,
   registerChannel as dbRegisterChannel,
   enqueueMessage,
-} from './db.js';
+} from '../db.js';
 import {
   buildAttachmentOnlyPrompt,
   selectAttachmentsWithinLimits,

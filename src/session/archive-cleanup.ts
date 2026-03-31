@@ -1,7 +1,7 @@
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { config } from '../config.js';
+import { logger } from '../logger.js';
 
 const ARCHIVE_TIMESTAMP_RE = /__archived_(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;

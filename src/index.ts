@@ -1,11 +1,11 @@
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { initDb, closeDb } from './db.js';
-import { startDiscord, stopDiscord, getBotTag } from './discord.js';
-import { startArchiveCleanup } from './archive-cleanup.js';
-import { startMediaCleanup } from './media.js';
-import { startProcessingLoop, stopProcessingLoop } from './queue.js';
-import { startScheduler } from './scheduler.js';
+import { startDiscord, stopDiscord, getBotTag } from './discord/client.js';
+import { startArchiveCleanup } from './session/archive-cleanup.js';
+import { startMediaCleanup } from './session/media.js';
+import { startProcessingLoop, stopProcessingLoop } from './agent/queue.js';
+import { startScheduler } from './agent/scheduler.js';
 
 /**
  * pi-discord-gateway - Lightweight Discord gateway for pi coding agent.

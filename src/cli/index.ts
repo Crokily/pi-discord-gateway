@@ -3,9 +3,9 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { RegisteredChannel } from './types.js';
+import type { RegisteredChannel } from '../types.js';
 
-type DbModule = typeof import('./db.js');
+type DbModule = typeof import('../db.js');
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const [command, ...args] = argv;
@@ -20,7 +20,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case 'start': {
-      const { startGateway } = await import('./index.js');
+      const { startGateway } = await import('../index.js');
       await startGateway();
       return 0;
     }
@@ -125,7 +125,7 @@ async function cliRegister(args: string[]): Promise<void> {
     throw new Error('Usage: piscord register <channel-id> <name> [--folder <name>] [--no-trigger] [--main]');
   }
 
-  const { validateSessionFolder } = await import('./session-path.js');
+  const { validateSessionFolder } = await import('../session/path.js');
   const [channelId, name, ...optionArgs] = args;
   const options = parseRegisterOptions(channelId, optionArgs, validateSessionFolder);
   const channel: RegisteredChannel = {
@@ -250,7 +250,7 @@ async function cliSend(args: string[]): Promise<void> {
     throw new Error(usage);
   }
 
-  const { sendFilesToDiscord } = await import('./send.js');
+  const { sendFilesToDiscord } = await import('../discord/send.js');
   const channelJid = toDiscordChannelJid(channel);
   const result = await sendFilesToDiscord({ channelJid, text, files });
   console.log(`Sent ${result.sentFiles} file(s) to ${channelJid}`);
@@ -258,7 +258,7 @@ async function cliSend(args: string[]): Promise<void> {
 
 async function cliAddTask(args: string[]): Promise<void> {
   const options = parseTaskAddOptions(args);
-  const { computeNextRun } = await import('./scheduler.js');
+  const { computeNextRun } = await import('../agent/scheduler.js');
   const nextRunAt = computeNextRun(options.schedule, options.type);
 
   if (!nextRunAt) {
@@ -329,8 +329,8 @@ async function cliDisableTask(args: string[]): Promise<void> {
 
 async function cliArchiveList(): Promise<void> {
   const [{ listArchivedSessions }, { config }] = await Promise.all([
-    import('./archive-cleanup.js'),
-    import('./config.js'),
+    import('../session/archive-cleanup.js'),
+    import('../config.js'),
   ]);
 
   const archivedSessions = listArchivedSessions(config.sessionsDir);
@@ -357,8 +357,8 @@ async function cliArchiveCleanup(args: string[]): Promise<void> {
   }
 
   const [{ cleanupArchivedSessions }, { config }] = await Promise.all([
-    import('./archive-cleanup.js'),
-    import('./config.js'),
+    import('../session/archive-cleanup.js'),
+    import('../config.js'),
   ]);
 
   if (config.archiveRetentionDays === 0) {
@@ -384,9 +384,9 @@ async function reportError(command: string | undefined, err: unknown): Promise<v
 
   if (command === 'start') {
     const [{ closeDb }, { stopDiscord }, { logger }] = await Promise.all([
-      import('./db.js'),
-      import('./discord.js'),
-      import('./logger.js'),
+      import('../db.js'),
+      import('../discord/client.js'),
+      import('../logger.js'),
     ]);
 
     logger.fatal({ err: message }, 'Gateway exited with error');
@@ -437,7 +437,7 @@ function formatAge(date: Date, now = Date.now()): string {
 }
 
 async function withDb<T>(operation: (db: DbModule) => T | Promise<T>): Promise<T> {
-  const db = await import('./db.js');
+  const db = await import('../db.js');
   db.initDb();
 
   try {

@@ -6,8 +6,8 @@
  * concurrency limit.
  */
 
-import { config } from './config.js';
-import { logger } from './logger.js';
+import { config } from '../config.js';
+import { logger } from '../logger.js';
 import {
   channelsWithPending,
   claimNextMessage,
@@ -17,9 +17,9 @@ import {
   recoverStuckMessages,
   logMessage,
   getChannel,
-} from './db.js';
-import { invokeAgent } from './agent.js';
-import { sendResponse, setTyping } from './discord.js';
+} from '../db.js';
+import { invokeAgent } from './invoke.js';
+import { sendResponse, setTyping } from '../discord/client.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
 
 /** Channels currently being processed (per-channel serial lock) */

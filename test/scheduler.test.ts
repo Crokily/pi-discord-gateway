@@ -5,7 +5,7 @@ const originalDbPath = process.env.DB_PATH;
 describe('computeNextRun', () => {
   it('returns a future date for a cron expression', async () => {
     vi.resetModules();
-    const { computeNextRun } = await import('../src/scheduler.js');
+    const { computeNextRun } = await import('../src/agent/scheduler.js');
 
     const nextRun = computeNextRun('* * * * *', 'recurring');
 
@@ -15,7 +15,7 @@ describe('computeNextRun', () => {
 
   it('returns null for a past ISO one-time schedule', async () => {
     vi.resetModules();
-    const { computeNextRun } = await import('../src/scheduler.js');
+    const { computeNextRun } = await import('../src/agent/scheduler.js');
 
     const nextRun = computeNextRun(new Date(Date.now() - 60_000).toISOString(), 'once');
 
@@ -24,7 +24,7 @@ describe('computeNextRun', () => {
 
   it('returns the original future ISO one-time schedule', async () => {
     vi.resetModules();
-    const { computeNextRun } = await import('../src/scheduler.js');
+    const { computeNextRun } = await import('../src/agent/scheduler.js');
     const futureIso = new Date(Date.now() + 60_000).toISOString();
 
     const nextRun = computeNextRun(futureIso, 'once');
