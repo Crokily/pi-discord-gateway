@@ -1,4 +1,4 @@
-# pi-discord-gateway
+# pi-discord-gw
 
 A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). It receives Discord messages, queues them in SQLite, invokes `pi` as a subprocess, and sends responses back — keeping a persistent session per channel.
 
@@ -28,7 +28,7 @@ Discord ──discord.js──→ Gateway ──pi subprocess──→ Pi Agent
 
 ```bash
 # 1. Install (requires pi to be installed and logged in)
-npm install -g pi-discord-gateway
+npm install -g pi-discord-gw
 
 # 2. Setup — walks you through config
 pi-discord setup
@@ -54,13 +54,13 @@ pi-discord start
 ### npm (recommended)
 
 ```bash
-npm install -g pi-discord-gateway
+npm install -g pi-discord-gw
 ```
 
 ### npx (quick trial)
 
 ```bash
-npx pi-discord-gateway@latest setup
+npx pi-discord-gw@latest setup
 ```
 
 ### From source
@@ -191,14 +191,14 @@ volumes:
 ### Standalone
 
 ```bash
-docker build -t pi-discord-gateway .
+docker build -t pi-discord-gw .
 docker run -d \
   --env-file .env \
   -v pi-discord-data:/data \
   -v ~/.pi/agent/auth.json:/home/node/.pi/agent/auth.json:ro \
   -e SESSIONS_DIR=/data/sessions \
   -e DB_PATH=/data/gateway.db \
-  pi-discord-gateway
+  pi-discord-gw
 ```
 
 ## Data Locations

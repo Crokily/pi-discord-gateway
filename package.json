@@ -1,5 +1,5 @@
 {
-  "name": "pi-discord-gateway",
+  "name": "pi-discord-gw",
   "version": "1.1.0",
   "description": "Lightweight Discord gateway for pi coding agent",
   "license": "MIT",
