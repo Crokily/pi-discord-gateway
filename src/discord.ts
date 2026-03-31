@@ -16,6 +16,7 @@ import {
   type TextChannel,
   type DMChannel,
 } from 'discord.js';
+import { type RegisteredChannel } from './types.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import {
@@ -106,6 +107,10 @@ async function handleMessage(message: Message): Promise<void> {
   const channelId = message.channelId;
   const jid = `dc:${channelId}`;
 
+  if (!isDM && config.excludedChannels.has(channelId)) {
+    return;
+  }
+
   // ── Build content ──
   let content = message.content;
   const senderName = message.member?.displayName || message.author.displayName || message.author.username;
@@ -184,6 +189,30 @@ async function handleMessage(message: Message): Promise<void> {
     dbRegisterChannel(reg);
     channel = reg;
     logger.info({ jid, senderName }, 'Auto-registered DM channel');
+  }
+
+  // Auto-register guild channels based on policy
+  if (!channel && !isDM && config.channelPolicy !== 'allowlist') {
+    if (config.excludedChannels.has(channelId)) {
+      logger.debug({ jid }, 'Channel is excluded, ignoring');
+      return;
+    }
+
+    const guildName = message.guild?.name || 'Unknown';
+    const channelName = (message.channel as TextChannel).name || 'unknown';
+    const name = `${guildName} #${channelName}`;
+    const reg: RegisteredChannel = {
+      jid,
+      name,
+      folder: `ch_${channelId}`,
+      requiresTrigger: config.channelPolicy === 'open-trigger',
+      isMain: false,
+      modelOverride: '',
+      thinkingOverride: '',
+    };
+    dbRegisterChannel(reg);
+    channel = reg;
+    logger.info({ jid, name, policy: config.channelPolicy }, 'Auto-registered guild channel');
   }
 
   if (!channel) {

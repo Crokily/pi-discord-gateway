@@ -28,6 +28,7 @@ export async function runSetup(args: string[]): Promise<void> {
   let token = tokenArg;
   let triggerName = DEFAULT_TRIGGER_NAME;
   let workingDir = DEFAULT_WORKING_DIR;
+  let channelPolicy: 'open' | 'open-trigger' | 'allowlist' = 'open';
 
   if (interactive) {
     const rl = createInterface({ input, output });
@@ -39,6 +40,15 @@ export async function runSetup(args: string[]): Promise<void> {
 
       triggerName = await promptWithDefault(rl, 'Trigger Name', DEFAULT_TRIGGER_NAME);
       workingDir = await promptWithDefault(rl, 'Working Directory', DEFAULT_WORKING_DIR);
+
+      const policyOptions = ['open', 'open-trigger', 'allowlist'] as const;
+      console.log('\nChannel Policy:');
+      console.log('  1. open          — All guild channels, respond to everything');
+      console.log('  2. open-trigger  — All guild channels, but require @mention');
+      console.log('  3. allowlist     — Only manually registered channels');
+      const policyChoice = await promptWithDefault(rl, 'Choose [1/2/3]', '1');
+      const policyIndex = parseInt(policyChoice, 10) - 1;
+      channelPolicy = policyOptions[policyIndex] || 'open';
     } finally {
       rl.close();
     }
@@ -56,6 +66,7 @@ export async function runSetup(args: string[]): Promise<void> {
     token,
     triggerName,
     workingDir,
+    channelPolicy,
     sessionsDir: DEFAULT_SESSIONS_DIR,
     dbPath: DEFAULT_DB_PATH,
   }));
@@ -115,6 +126,7 @@ export function buildConfigFile(options: {
   token: string;
   triggerName: string;
   workingDir: string;
+  channelPolicy?: 'open' | 'open-trigger' | 'allowlist';
   sessionsDir: string;
   dbPath: string;
 }): string {
@@ -137,6 +149,8 @@ export function buildConfigFile(options: {
     'POLL_INTERVAL_MS=1000',
     'SHUTDOWN_TIMEOUT_MS=15000',
     'AUTO_REGISTER_DMS=true',
+    `CHANNEL_POLICY=${options.channelPolicy ?? 'open'}`,
+    'EXCLUDED_CHANNELS=',
     'MAX_ATTACHMENT_BYTES=26214400',
     'MAX_TOTAL_ATTACHMENT_BYTES=52428800',
     '',

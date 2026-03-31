@@ -137,6 +137,14 @@ export const config = {
   /** Auto-register DM channels */
   autoRegisterDMs: envBool('AUTO_REGISTER_DMS', true),
 
+  /** Channel access policy: open, open-trigger, or allowlist */
+  channelPolicy: env('CHANNEL_POLICY', 'allowlist') as 'open' | 'open-trigger' | 'allowlist',
+
+  /** Comma-separated channel IDs to exclude from auto-registration */
+  excludedChannels: new Set(
+    env('EXCLUDED_CHANNELS').split(',').map((s) => s.trim()).filter(Boolean),
+  ),
+
   /** Max size for a single Discord attachment in bytes (0 disables the limit) */
   maxAttachmentBytes: envInt('MAX_ATTACHMENT_BYTES', 25 * 1024 * 1024, { min: 0 }),
 
