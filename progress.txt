@@ -22,3 +22,12 @@
 - Files changed: src/config.ts, src/discord.ts, src/setup.ts, test/channel-policy.test.ts
 - **Learnings:** The `RegisteredChannel` type import was needed in discord.ts for the auto-register block
 ---
+
+## 2026-03-31 15:36 - US-002: Abort / cancel command
+- Added `activeChannelControllers` Map<string, AbortController> in queue.ts for jid-based lookup
+- Exported `abortChannelTask(jid)` — aborts controller + clears pending messages
+- Added `/pi stop` subcommand in slash-commands.ts
+- New test in test/abort.test.ts — covers no-active-task path with in-memory DB
+- Files changed: src/queue.ts, src/slash-commands.ts, test/abort.test.ts
+- **Learnings:** DB must be initialized for `clearPendingMessages` — test uses DB_PATH=':memory:'
+---

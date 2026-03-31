@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { initDb, closeDb } from './db.js';
 import { startDiscord, stopDiscord, getBotTag } from './discord.js';
+import { startArchiveCleanup } from './archive-cleanup.js';
 import { startMediaCleanup } from './media.js';
 import { startProcessingLoop, stopProcessingLoop } from './queue.js';
 
@@ -18,6 +19,7 @@ export async function startGateway(): Promise<void> {
 
   initDb();
 
+  let stopArchiveCleanup = () => {};
   let stopMediaCleanup = () => {};
   let processingStarted = false;
   let shutdownPromise: Promise<void> | null = null;
@@ -40,6 +42,7 @@ export async function startGateway(): Promise<void> {
 
       logger.info({ reason }, 'Shutting down gateway');
 
+      stopArchiveCleanup();
       stopMediaCleanup();
 
       if (processingStarted) {
@@ -65,6 +68,7 @@ export async function startGateway(): Promise<void> {
 
     startProcessingLoop();
     processingStarted = true;
+    stopArchiveCleanup = startArchiveCleanup();
     stopMediaCleanup = startMediaCleanup();
 
     logger.info({

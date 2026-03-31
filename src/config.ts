@@ -110,6 +110,9 @@ export const config = {
   /** Base directory for per-channel session folders */
   sessionsDir: env('SESSIONS_DIR', resolve(DEFAULT_DATA_DIR, 'sessions')),
 
+  /** Days to retain archived sessions (0 = never clean) */
+  archiveRetentionDays: envInt('ARCHIVE_RETENTION_DAYS', 30, { min: 0 }),
+
   /** SQLite database path */
   dbPath: env('DB_PATH', resolve(DEFAULT_DATA_DIR, 'gateway.db')),
 

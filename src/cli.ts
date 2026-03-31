@@ -29,6 +29,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       runStatus();
       return 0;
     }
+    case 'archive':
+      await cliArchive(args);
+      return 0;
     case 'channels':
       await cliListChannels();
       return 0;
@@ -78,6 +81,8 @@ export function formatHelpText(): string {
     '  piscord setup [token]                         Interactive setup wizard',
     '  piscord start                                 Start the gateway in the foreground',
     '  piscord status                                Show local diagnostics',
+    '  piscord archive list                          List archived sessions',
+    '  piscord archive cleanup [--dry-run]           Clean up archived sessions now',
     '  piscord channels                              List registered channels',
     '  piscord register <id> <name> [opts]          Register a Discord channel',
     '  piscord unregister <id>                       Unregister a channel',
@@ -87,6 +92,8 @@ export function formatHelpText(): string {
     '  piscord daemon stop                           Stop systemd service',
     '  piscord daemon status                         Show systemd service status',
     '  piscord daemon logs                           Tail systemd journal logs',
+    '  piscord archive list                           List archived sessions',
+    '  piscord archive cleanup [--dry-run]            Clean up expired archives',
     '  piscord help                                  Show this help',
     '',
     'REGISTER OPTIONS:',
@@ -139,6 +146,56 @@ async function cliUnregister(args: string[]): Promise<void> {
       console.log(`Channel not found: ${jid}`);
     }
   });
+}
+
+async function cliArchive(args: string[]): Promise<void> {
+  const subcommand = args[0];
+
+  if (subcommand === 'list') {
+    const { listArchivedSessions } = await import('./archive-cleanup.js');
+    const { config } = await import('./config.js');
+    const sessions = listArchivedSessions(config.sessionsDir);
+
+    if (sessions.length === 0) {
+      console.log('No archived sessions.');
+      return;
+    }
+
+    console.log(`Archived sessions (${sessions.length}):\n`);
+    const now = Date.now();
+    for (const s of sessions) {
+      const ageDays = Math.floor((now - s.archivedAt.getTime()) / (24 * 60 * 60 * 1000));
+      console.log(`  ${s.name}  (${ageDays}d ago)`);
+    }
+    return;
+  }
+
+  if (subcommand === 'cleanup') {
+    const { cleanupArchivedSessions } = await import('./archive-cleanup.js');
+    const { config } = await import('./config.js');
+    const dryRun = args.includes('--dry-run');
+    const retention = config.archiveRetentionDays;
+
+    if (retention === 0) {
+      console.log('Archive cleanup is disabled (ARCHIVE_RETENTION_DAYS=0).');
+      return;
+    }
+
+    const result = cleanupArchivedSessions(config.sessionsDir, retention, { dryRun });
+
+    if (result.deleted.length === 0) {
+      console.log('No expired archives to clean up.');
+    } else {
+      const verb = dryRun ? 'Would delete' : 'Deleted';
+      console.log(`${verb} ${result.deleted.length} archived session(s):`);
+      for (const name of result.deleted) {
+        console.log(`  ${name}`);
+      }
+    }
+    return;
+  }
+
+  throw new Error('Usage: piscord archive <list|cleanup> [--dry-run]');
 }
 
 async function cliListChannels(): Promise<void> {

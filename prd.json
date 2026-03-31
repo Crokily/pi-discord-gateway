@@ -42,8 +42,8 @@
         "Tests pass"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Completed. abortChannelTask exported, /pi stop subcommand added, 1 new test."
     },
     {
       "id": "US-003",
