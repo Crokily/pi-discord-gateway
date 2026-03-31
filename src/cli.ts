@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RegisteredChannel } from './types.js';
@@ -180,7 +181,15 @@ function isDirectExecution(): boolean {
     return false;
   }
 
-  return import.meta.url === pathToFileURL(resolve(entry)).href;
+  // resolve() keeps symlinks intact, but import.meta.url resolves to the
+  // real file.  npm/pnpm bin shims are symlinks, so we must compare the
+  // realpath of argv[1] against import.meta.url.
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(resolve(entry))).href;
+  } catch {
+    // realpathSync can throw if the entry doesn't exist (e.g. piped stdin).
+    return import.meta.url === pathToFileURL(resolve(entry)).href;
+  }
 }
 
 function errorMessage(err: unknown): string {
