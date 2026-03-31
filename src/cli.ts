@@ -38,6 +38,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case 'channels':
       await cliListChannels();
       return 0;
+    case 'send':
+      await cliSend(args);
+      return 0;
     case 'register':
       await cliRegister(args);
       return 0;
@@ -92,6 +95,7 @@ export function formatHelpText(): string {
     '  piscord task enable <id>                      Enable a scheduled task',
     '  piscord task disable <id>                     Disable a scheduled task',
     '  piscord channels                              List registered channels',
+    '  piscord send --channel <jid> --file <path> [--file <path> ...] [--text <message>]',
     '  piscord register <id> <name> [opts]          Register a Discord channel',
     '  piscord unregister <id>                       Unregister a channel',
     '  piscord daemon install                        Install systemd user service',
@@ -209,6 +213,47 @@ async function cliListChannels(): Promise<void> {
       console.log(formatChannelSummary(channel));
     }
   });
+}
+
+async function cliSend(args: string[]): Promise<void> {
+  const usage = 'Usage: piscord send --channel <jid> --file <path> [--file <path> ...] [--text <message>]';
+  let channel: string | undefined;
+  let text: string | undefined;
+  const files: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case '--channel':
+        if (!args[i + 1]) {
+          throw new Error(usage);
+        }
+        channel = args[++i];
+        break;
+      case '--file':
+        if (!args[i + 1]) {
+          throw new Error(usage);
+        }
+        files.push(args[++i]);
+        break;
+      case '--text':
+        if (!args[i + 1]) {
+          throw new Error(usage);
+        }
+        text = args[++i];
+        break;
+      default:
+        throw new Error(usage);
+    }
+  }
+
+  if (!channel || files.length === 0) {
+    throw new Error(usage);
+  }
+
+  const { normalizeChannelJid, sendFilesToDiscord } = await import('./send.js');
+  const channelJid = normalizeChannelJid(channel);
+  const result = await sendFilesToDiscord({ channelJid, text, files });
+  console.log(`Sent ${result.sentFiles} file(s) to ${channelJid}`);
 }
 
 async function cliAddTask(args: string[]): Promise<void> {

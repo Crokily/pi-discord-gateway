@@ -41,3 +41,14 @@
 - Files changed: src/archive-cleanup.ts, src/config.ts, src/index.ts, src/cli.ts, src/setup.ts, test/archive-cleanup.test.ts
 - **Learnings:** Keep cleanup modules self-contained with start/stop pattern matching media.ts
 ---
+
+## 2026-03-31 15:57 - US-004: Scheduled tasks via CLI and scheduler
+- Added `scheduled_tasks` table and task DB helpers in src/db.ts
+- Added `src/scheduler.ts` with `computeNextRun()` using croner and a 30-second scheduler loop
+- Added `MAX_SCHEDULED_CONCURRENCY` config and setup output
+- Integrated scheduler lifecycle into index.ts
+- Added CLI commands: `piscord task add|list|remove|enable|disable`
+- Added tests in test/scheduler.test.ts for cron/ISO next-run computation and DB lifecycle
+- Files changed: src/config.ts, src/db.ts, src/scheduler.ts, src/cli.ts, src/index.ts, src/setup.ts, package.json, package-lock.json, test/scheduler.test.ts
+- **Learnings:** Scheduler should enqueue into the existing queue rather than invent a parallel execution path
+---
