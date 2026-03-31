@@ -1,11 +1,10 @@
 import { Cron } from 'croner';
 import { config } from './config.js';
 import {
-  enqueueMessage,
+  enqueueScheduledTask,
   getDueScheduledTasks,
   type ScheduledTaskRow,
   type ScheduledTaskType,
-  updateTaskAfterRun,
 } from './db.js';
 import { logger } from './logger.js';
 
@@ -71,13 +70,16 @@ function enqueueDueTasks(): void {
 }
 
 function enqueueDueTask(task: ScheduledTaskRow, now: string): void {
-  enqueueMessage({
-    channelJid: task.channel_jid,
-    sender: 'scheduler',
-    senderName: 'Scheduler',
-    content: task.prompt,
-    timestamp: now,
-  });
-
-  updateTaskAfterRun(task.id, now, computeNextRun(task.schedule, task.type));
+  enqueueScheduledTask(
+    task.id,
+    {
+      channelJid: task.channel_jid,
+      sender: 'scheduler',
+      senderName: 'Scheduler',
+      content: task.prompt,
+      timestamp: now,
+    },
+    now,
+    computeNextRun(task.schedule, task.type),
+  );
 }

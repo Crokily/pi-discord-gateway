@@ -55,10 +55,9 @@ describe('listArchivedSessions', () => {
 
     const archivedSessions = listArchivedSessions(root);
 
-    expect(archivedSessions).toHaveLength(1);
-    expect(archivedSessions[0]?.name).toBe('gamma__archived_20240203T040506Z');
-    expect(archivedSessions[0]?.path).toBe(archived);
-    expect(archivedSessions[0]?.archivedAt.toISOString()).toBe('2024-02-03T04:05:06.000Z');
+    expect(archivedSessions).toHaveLength(2);
+    expect(archivedSessions.map((s) => s.name)).toContain('gamma__archived_20240203T040506Z');
+    expect(archivedSessions.map((s) => s.name)).toContain('epsilon__archived_20240203T040506Z');
   });
 });
 

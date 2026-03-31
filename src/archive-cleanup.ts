@@ -15,53 +15,41 @@ export interface ArchivedSession {
 
 export function parseArchiveTimestamp(dirName: string): Date | undefined {
   const match = ARCHIVE_TIMESTAMP_RE.exec(dirName);
-  if (!match) {
-    return undefined;
-  }
+  if (!match) return undefined;
 
-  const year = Number.parseInt(match[1], 10);
-  const month = Number.parseInt(match[2], 10);
-  const day = Number.parseInt(match[3], 10);
-  const hour = Number.parseInt(match[4], 10);
-  const minute = Number.parseInt(match[5], 10);
-  const second = Number.parseInt(match[6], 10);
-  const archivedAt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const [, y, mo, d, h, mi, s] = match;
+  if (+mo < 1 || +mo > 12 || +d < 1 || +d > 31 || +h > 23 || +mi > 59 || +s > 59) return undefined;
 
-  if (
-    archivedAt.getUTCFullYear() !== year ||
-    archivedAt.getUTCMonth() !== month - 1 ||
-    archivedAt.getUTCDate() !== day ||
-    archivedAt.getUTCHours() !== hour ||
-    archivedAt.getUTCMinutes() !== minute ||
-    archivedAt.getUTCSeconds() !== second
-  ) {
-    return undefined;
-  }
-
-  return archivedAt;
+  return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
 }
 
 export function listArchivedSessions(sessionsDir: string): ArchivedSession[] {
-  try {
-    return readdirSync(sessionsDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => {
-        const archivedAt = parseArchiveTimestamp(entry.name);
-        if (!archivedAt) {
-          return undefined;
-        }
+  const results: ArchivedSession[] = [];
+  const stack = [sessionsDir];
 
-        return {
-          path: join(sessionsDir, entry.name),
-          name: entry.name,
-          archivedAt,
-        };
-      })
-      .filter((entry): entry is ArchivedSession => Boolean(entry))
-      .sort((a, b) => a.archivedAt.getTime() - b.archivedAt.getTime());
-  } catch {
-    return [];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = join(dir, entry.name);
+      const archivedAt = parseArchiveTimestamp(entry.name);
+
+      if (archivedAt) {
+        results.push({ path: fullPath, name: entry.name, archivedAt });
+      } else {
+        stack.push(fullPath);
+      }
+    }
   }
+
+  return results.sort((a, b) => a.archivedAt.getTime() - b.archivedAt.getTime());
 }
 
 export function cleanupArchivedSessions(

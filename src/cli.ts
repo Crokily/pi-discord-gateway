@@ -250,8 +250,8 @@ async function cliSend(args: string[]): Promise<void> {
     throw new Error(usage);
   }
 
-  const { normalizeChannelJid, sendFilesToDiscord } = await import('./send.js');
-  const channelJid = normalizeChannelJid(channel);
+  const { sendFilesToDiscord } = await import('./send.js');
+  const channelJid = toDiscordChannelJid(channel);
   const result = await sendFilesToDiscord({ channelJid, text, files });
   console.log(`Sent ${result.sentFiles} file(s) to ${channelJid}`);
 }

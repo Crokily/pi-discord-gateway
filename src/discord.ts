@@ -107,10 +107,6 @@ async function handleMessage(message: Message): Promise<void> {
   const channelId = message.channelId;
   const jid = `dc:${channelId}`;
 
-  if (!isDM && config.excludedChannels.has(channelId)) {
-    return;
-  }
-
   // ── Build content ──
   let content = message.content;
   const senderName = message.member?.displayName || message.author.displayName || message.author.username;
@@ -194,7 +190,6 @@ async function handleMessage(message: Message): Promise<void> {
   // Auto-register guild channels based on policy
   if (!channel && !isDM && config.channelPolicy !== 'allowlist') {
     if (config.excludedChannels.has(channelId)) {
-      logger.debug({ jid }, 'Channel is excluded, ignoring');
       return;
     }
 

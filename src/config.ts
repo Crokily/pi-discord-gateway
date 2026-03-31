@@ -94,6 +94,16 @@ function envBool(key: string, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(v);
 }
 
+const VALID_CHANNEL_POLICIES = ['open', 'open-trigger', 'allowlist'] as const;
+type ChannelPolicy = typeof VALID_CHANNEL_POLICIES[number];
+
+function parseChannelPolicy(value: string): ChannelPolicy {
+  if ((VALID_CHANNEL_POLICIES as readonly string[]).includes(value)) {
+    return value as ChannelPolicy;
+  }
+  return 'allowlist';
+}
+
 export const config = {
   /** Discord bot token (required) */
   discordToken: env('DISCORD_BOT_TOKEN'),
@@ -144,7 +154,7 @@ export const config = {
   autoRegisterDMs: envBool('AUTO_REGISTER_DMS', true),
 
   /** Channel access policy: open, open-trigger, or allowlist */
-  channelPolicy: env('CHANNEL_POLICY', 'allowlist') as 'open' | 'open-trigger' | 'allowlist',
+  channelPolicy: parseChannelPolicy(env('CHANNEL_POLICY', 'allowlist')),
 
   /** Comma-separated channel IDs to exclude from auto-registration */
   excludedChannels: new Set(

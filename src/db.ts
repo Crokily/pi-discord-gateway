@@ -329,6 +329,18 @@ export function updateTaskAfterRun(id: number, lastRunAt: string, nextRunAt: str
   `).run(normalizeTimestamp(lastRunAt), normalizeTimestamp(nextRunAt), nextRunAt, id);
 }
 
+export function enqueueScheduledTask(
+  taskId: number,
+  msg: { channelJid: string; sender: string; senderName: string; content: string; timestamp: string },
+  lastRunAt: string,
+  nextRunAt: string | null,
+): void {
+  db.transaction(() => {
+    enqueueMessage(msg);
+    updateTaskAfterRun(taskId, lastRunAt, nextRunAt);
+  })();
+}
+
 // ── Message log ──
 
 export function logMessage(channelJid: string, role: string, content: string): void {
