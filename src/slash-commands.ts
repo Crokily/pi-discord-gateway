@@ -32,7 +32,7 @@ import {
   getDesiredThinkingLevel,
   type EffectiveChannelSettings,
 } from './channel-settings.js';
-import { isChannelProcessing } from './queue.js';
+import { abortChannelTask, isChannelProcessing } from './queue.js';
 import { rotateChannelSessionDir } from './session-path.js';
 import type { RegisteredChannel } from './types.js';
 
@@ -84,6 +84,11 @@ const PI_COMMAND = new SlashCommandBuilder()
     sub
       .setName('new')
       .setDescription('Start a fresh pi session for this channel'),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName('stop')
+      .setDescription('Abort the current task and clear the queue for this channel'),
   );
 
 export async function registerGlobalCommands(client: Client<true>): Promise<void> {
@@ -126,6 +131,9 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
         return;
       case 'new':
         await handleNew(interaction);
+        return;
+      case 'stop':
+        await handleStop(interaction);
         return;
       default:
         await interaction.reply(reply(`Unknown subcommand: ${subcommand}`, interaction));
@@ -172,6 +180,26 @@ async function handleNew(interaction: ChatInputCommandInteraction): Promise<void
   }
 
   await interaction.reply(reply(notes.join('\n'), interaction));
+}
+
+async function handleStop(interaction: ChatInputCommandInteraction): Promise<void> {
+  const jid = `dc:${interaction.channelId}`;
+  const result = abortChannelTask(jid);
+
+  if (!result.aborted && result.cleared === 0) {
+    await interaction.reply(reply('No active task or queued messages in this channel.', interaction));
+    return;
+  }
+
+  const notes: string[] = [];
+  if (result.aborted) {
+    notes.push('Aborted the current task.');
+  }
+  if (result.cleared > 0) {
+    notes.push(`Cleared ${result.cleared} queued ${result.cleared === 1 ? 'message' : 'messages'}.`);
+  }
+
+  await interaction.reply(reply(notes.join(' '), interaction));
 }
 
 async function handleStatus(interaction: ChatInputCommandInteraction): Promise<void> {

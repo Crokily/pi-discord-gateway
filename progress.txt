@@ -12,3 +12,13 @@
 - `startGateway()` in `index.ts` orchestrates lifecycle: initDb → startDiscord → startProcessingLoop → startMediaCleanup
 - Setup wizard uses readline/promises for interactive prompts
 ---
+
+## 2026-03-31 15:32 - US-001: Channel access policy
+- Added `channelPolicy` (open / open-trigger / allowlist) and `excludedChannels` to config.ts
+- Guild auto-register in discord.ts with early exclusion check
+- Setup wizard channel policy step in setup.ts
+- `buildConfigFile` outputs CHANNEL_POLICY and EXCLUDED_CHANNELS
+- 3 new tests in test/channel-policy.test.ts
+- Files changed: src/config.ts, src/discord.ts, src/setup.ts, test/channel-policy.test.ts
+- **Learnings:** The `RegisteredChannel` type import was needed in discord.ts for the auto-register block
+---

@@ -11,6 +11,7 @@ import { logger } from './logger.js';
 import {
   channelsWithPending,
   claimNextMessage,
+  clearPendingMessages,
   markMessageDone,
   markMessageFailed,
   recoverStuckMessages,
@@ -25,6 +26,7 @@ import { computeEffectiveChannelSettings } from './channel-settings.js';
 const activeChannels = new Set<string>();
 const activeTaskPromises = new Set<Promise<void>>();
 const activeTaskControllers = new Map<number, AbortController>();
+const activeChannelControllers = new Map<string, AbortController>();
 
 let running = false;
 let pollTimer: NodeJS.Timeout | undefined;
@@ -32,6 +34,16 @@ let stopPromise: Promise<void> | null = null;
 
 export function isChannelProcessing(jid: string): boolean {
   return activeChannels.has(jid);
+}
+
+export function abortChannelTask(jid: string): { aborted: boolean; cleared: number } {
+  const controller = activeChannelControllers.get(jid);
+  const aborted = Boolean(controller);
+  if (controller) {
+    controller.abort();
+  }
+  const cleared = clearPendingMessages(jid);
+  return { aborted, cleared };
 }
 
 export function startProcessingLoop(): void {
@@ -101,6 +113,7 @@ function dispatch(): void {
     const controller = new AbortController();
     activeChannels.add(jid);
     activeTaskControllers.set(msg.rowid, controller);
+    activeChannelControllers.set(jid, controller);
 
     const taskPromise = processMessage(
       jid,
@@ -112,6 +125,7 @@ function dispatch(): void {
     ).finally(() => {
       activeChannels.delete(jid);
       activeTaskControllers.delete(msg.rowid);
+      activeChannelControllers.delete(jid);
       activeTaskPromises.delete(taskPromise);
 
       if (running) {
