@@ -52,3 +52,12 @@
 - Files changed: src/config.ts, src/db.ts, src/scheduler.ts, src/cli.ts, src/index.ts, src/setup.ts, package.json, package-lock.json, test/scheduler.test.ts
 - **Learnings:** Scheduler should enqueue into the existing queue rather than invent a parallel execution path
 ---
+
+## 2026-03-31 16:03 - US-005: Direct send-file CLI tool
+- Added `src/send.ts` with `normalizeChannelJid()`, request validation, and `sendFilesToDiscord()`
+- Added CLI command: `piscord send --channel <jid> --file <path> [--file <path> ...] [--text <message>]`
+- Validation covers required files, 10-file Discord limit, missing files, and per-file size limit
+- Added unit tests in test/send.test.ts
+- Files changed: src/send.ts, src/cli.ts, test/send.test.ts
+- **Learnings:** A thin direct-send tool is cleaner than building file transport into the standard response pipeline
+---
