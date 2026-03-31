@@ -33,7 +33,7 @@ jobs:
         run: npm test
 
       - name: CLI smoke test
-        run: node dist/cli.js help
+        run: node dist/cli/index.js help
 
       - name: Package dry-run
         run: npm pack --dry-run
