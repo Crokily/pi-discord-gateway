@@ -84,32 +84,31 @@ The gateway registers a global `/pi` command on Discord:
 | `/pi new` | Start a fresh session for this channel |
 | `/pi stop` | Abort the current task and clear queued messages |
 
-## Scheduled Tasks
+## Tools for Pi
 
-The gateway has a built-in scheduler that can run pi prompts on a cron schedule or at a specific time. Tasks are injected into the normal message queue, so they use the channel's configured model and thinking level.
+The gateway exposes two capabilities through its CLI that **pi itself can invoke**. You don't type these commands in your terminal — you just tell pi in Discord, and it handles the rest.
 
-### Recurring tasks (cron)
+For example, you can say to pi:
+
+> *"Create a daily task at 9am UTC that generates a summary report"*
+> *"Send me report.pdf with a message saying here you go"*
+> *"Set a one-time reminder for the 2pm meeting today"*
+
+pi will run the appropriate `piscord task` or `piscord send` command behind the scenes.
+
+### Scheduled tasks
+
+pi can schedule cron-based or one-time prompts through the gateway's scheduler. Tasks are injected into the normal message queue, so they use the channel's configured model and thinking level.
+
+Under the hood, pi runs commands like:
 
 ```bash
-# Generate a daily summary every morning at 9am UTC
 piscord task add \
   --name "daily-report" \
   --schedule "0 9 * * *" \
   --channel dc:123456789 \
   --prompt "Generate today's summary report"
 
-# Run a health check every 6 hours
-piscord task add \
-  --name "health-check" \
-  --schedule "0 */6 * * *" \
-  --channel dc:123456789 \
-  --prompt "Run system health check and report any issues"
-```
-
-### One-time tasks
-
-```bash
-# Fire a one-time reminder at a specific time
 piscord task add \
   --name "meeting-reminder" \
   --schedule "2026-04-05T14:00:00Z" \
@@ -118,20 +117,22 @@ piscord task add \
   --once
 ```
 
-### Managing tasks
+The `--schedule` value uses standard 5-field cron syntax (`minute hour day month weekday`). For one-time tasks, add `--once` and pass an ISO 8601 datetime.
+
+**Task management** — also available via pi:
 
 ```bash
-piscord task list              # List all tasks (shows id, schedule, status)
-piscord task disable 1         # Pause a task
-piscord task enable 1          # Resume it
-piscord task remove 1          # Delete permanently
+piscord task list              # List all tasks
+piscord task disable <id>      # Pause
+piscord task enable <id>       # Resume
+piscord task remove <id>       # Delete
 ```
 
-The `--schedule` value uses standard 5-field cron syntax (`minute hour day month weekday`). For one-time tasks (`--once`), pass an ISO 8601 datetime instead.
+### Sending files to Discord
 
-## File Sending
+pi can send files to any Discord channel using the gateway's built-in file relay.
 
-Pi can send files to Discord channels via the built-in `piscord send` tool:
+When you ask pi to send a file, it runs:
 
 ```bash
 piscord send --channel dc:123456789 --file /path/to/report.pdf --text "Here's the report"
@@ -140,7 +141,7 @@ piscord send --channel dc:123456789 --file chart.png --file data.csv
 
 - Up to 10 files per message (Discord limit)
 - Respects `MAX_ATTACHMENT_BYTES` per file
-- Works independently — no running gateway required
+- Works independently — no running gateway daemon required
 
 ## systemd Service
 
