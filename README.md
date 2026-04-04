@@ -104,7 +104,7 @@ Override path: `export PIDG_CONFIG=/path/to/config.env`
 | `PI_THINKING` | *(none)* | Default thinking level |
 | `PI_CWD` | `$HOME` | Working directory for pi |
 | `PI_EXTRA_FLAGS` | *(none)* | Extra flags passed to pi |
-| `TRIGGER_NAME` | `Andy` | Bot trigger name for @mentions |
+| `TRIGGER_NAME` | `pi` | Bot trigger name for @mentions |
 | `CHANNEL_POLICY` | `allowlist` | Channel access: `open`, `open-trigger`, or `allowlist` |
 | `EXCLUDED_CHANNELS` | *(none)* | Comma-separated channel IDs to exclude from auto-registration |
 | `MAX_CONCURRENCY` | `3` | Max parallel pi invocations |

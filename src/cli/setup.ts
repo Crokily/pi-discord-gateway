@@ -2,12 +2,11 @@ import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { createInterface } from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
+import * as clack from '@clack/prompts';
 import { listAvailableModels } from '../agent/model-catalog.js';
 import { resolveConfigPath } from '../config.js';
 
-const DEFAULT_TRIGGER_NAME = 'Andy';
+const DEFAULT_TRIGGER_NAME = 'pi';
 const DEFAULT_WORKING_DIR = homedir();
 const DEFAULT_DATA_DIR = resolve(homedir(), '.local/share/piscord-gateway');
 const DEFAULT_SESSIONS_DIR = resolve(DEFAULT_DATA_DIR, 'sessions');
@@ -19,45 +18,105 @@ export async function runSetup(args: string[]): Promise<void> {
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const configPath = resolveConfigPath();
 
-  printPrerequisites();
-
   if (!interactive && !tokenArg) {
     throw new Error('DISCORD_BOT_TOKEN must be provided as an argument when stdin is not interactive.');
   }
 
+  clack.intro('piscord setup');
+
+  // ── Prerequisites ──
+  const prereqs = checkPrerequisites();
+  const prereqLines = [
+    prereqs.piPath
+      ? `  ✓ pi binary: ${prereqs.piPath}${prereqs.piVersion ? ` (${prereqs.piVersion})` : ''}`
+      : '  ✗ pi binary: not found in PATH — install pi first',
+    prereqs.authFound
+      ? `  ✓ pi auth: found`
+      : `  ✗ pi auth: missing — run "pi" and log in first`,
+    prereqs.modelCount !== undefined
+      ? `  ✓ models: ${prereqs.modelCount} available`
+      : `  ✗ models: unavailable`,
+  ];
+  clack.note(prereqLines.join('\n'), 'Prerequisites');
+
+  if (!prereqs.piPath || !prereqs.authFound) {
+    clack.log.warn('Some prerequisites are missing. The gateway needs pi installed and logged in to work.');
+  }
+
+  // ── Token ──
   let token = tokenArg;
-  let triggerName = DEFAULT_TRIGGER_NAME;
-  let workingDir = DEFAULT_WORKING_DIR;
-  let channelPolicy: 'open' | 'open-trigger' | 'allowlist' = 'open';
-
-  if (interactive) {
-    const rl = createInterface({ input, output });
-
-    try {
-      if (!token) {
-        token = await promptRequired(rl, 'Discord Bot Token');
-      }
-
-      triggerName = await promptWithDefault(rl, 'Trigger Name', DEFAULT_TRIGGER_NAME);
-      workingDir = await promptWithDefault(rl, 'Working Directory', DEFAULT_WORKING_DIR);
-
-      const policyOptions = ['open', 'open-trigger', 'allowlist'] as const;
-      console.log('\nChannel Policy:');
-      console.log('  1. open          — All guild channels, respond to everything');
-      console.log('  2. open-trigger  — All guild channels, but require @mention');
-      console.log('  3. allowlist     — Only manually registered channels');
-      const policyChoice = await promptWithDefault(rl, 'Choose [1/2/3]', '1');
-      const policyIndex = parseInt(policyChoice, 10) - 1;
-      channelPolicy = policyOptions[policyIndex] || 'open';
-    } finally {
-      rl.close();
-    }
+  if (!token && interactive) {
+    const result = await clack.text({
+      message: 'Discord Bot Token',
+      placeholder: 'Paste your bot token here',
+      validate: (v) => {
+        if (!v.trim()) return 'Token cannot be empty.';
+        if (v.trim().length < 50) return 'That doesn\'t look like a valid bot token.';
+      },
+    });
+    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    token = result;
   }
 
   if (!token) {
     throw new Error('Discord Bot Token cannot be empty.');
   }
 
+  // ── Trigger name ──
+  let triggerName = DEFAULT_TRIGGER_NAME;
+  if (interactive) {
+    const result = await clack.text({
+      message: 'Trigger Name',
+      placeholder: DEFAULT_TRIGGER_NAME,
+      defaultValue: DEFAULT_TRIGGER_NAME,
+      initialValue: DEFAULT_TRIGGER_NAME,
+    });
+    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    triggerName = result || DEFAULT_TRIGGER_NAME;
+  }
+
+  // ── Channel policy ──
+  let channelPolicy: 'open' | 'open-trigger' | 'allowlist' = 'open';
+  if (interactive) {
+    const result = await clack.select({
+      message: 'Channel Policy — how should the bot handle server channels?',
+      options: [
+        {
+          value: 'open' as const,
+          label: 'open',
+          hint: 'Respond to all messages in all channels automatically',
+        },
+        {
+          value: 'open-trigger' as const,
+          label: 'open-trigger',
+          hint: `Listen in all channels, but only respond when @${triggerName} is mentioned`,
+        },
+        {
+          value: 'allowlist' as const,
+          label: 'allowlist',
+          hint: 'Only respond in manually registered channels (piscord register ...)',
+        },
+      ],
+      initialValue: 'open' as const,
+    });
+    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    channelPolicy = result;
+  }
+
+  // ── Working directory ──
+  let workingDir = DEFAULT_WORKING_DIR;
+  if (interactive) {
+    const result = await clack.text({
+      message: 'Working Directory — base directory pi uses when executing commands',
+      placeholder: DEFAULT_WORKING_DIR,
+      defaultValue: DEFAULT_WORKING_DIR,
+      initialValue: DEFAULT_WORKING_DIR,
+    });
+    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    workingDir = result || DEFAULT_WORKING_DIR;
+  }
+
+  // ── Write config ──
   mkdirSync(dirname(configPath), { recursive: true });
   mkdirSync(DEFAULT_DATA_DIR, { recursive: true });
   mkdirSync(DEFAULT_SESSIONS_DIR, { recursive: true });
@@ -71,55 +130,68 @@ export async function runSetup(args: string[]): Promise<void> {
     dbPath: DEFAULT_DB_PATH,
   }));
 
-  console.log('\nSetup complete.');
-  console.log(`Config written to: ${configPath}`);
-  console.log(`Sessions directory: ${DEFAULT_SESSIONS_DIR}`);
-  console.log('\nNext steps:');
-  console.log('  1. piscord daemon install');
-  console.log('  2. piscord daemon start');
-  console.log('  3. piscord register <channel-id> "<name>" [--no-trigger | --main]');
-  console.log('  4. piscord status');
-}
+  clack.log.success(`Config written to: ${configPath}`);
 
-function printPrerequisites(): void {
-  console.log('Checking prerequisites...\n');
+  // ── Daemon install + start ──
+  if (interactive && isLinux()) {
+    const installDaemon = await clack.confirm({
+      message: 'Install as systemd service and start now?',
+      initialValue: true,
+    });
+    if (clack.isCancel(installDaemon)) { clack.cancel('Setup cancelled.'); process.exit(0); }
 
-  const piPath = readCommandOutput('which pi');
-  if (piPath) {
-    console.log(`Pi binary: ${piPath}`);
-    const piVersion = readCommandOutput('pi --version');
-    console.log(`Pi version: ${piVersion || 'unknown'}`);
-  } else {
-    console.log('Pi binary: not found in PATH');
+    if (installDaemon) {
+      const s = clack.spinner();
+      s.start('Installing systemd service...');
+      try {
+        const { runDaemon } = await import('./daemon.js');
+        runDaemon('install');
+        s.message('Starting service...');
+        runDaemon('start');
+        s.stop('Service installed and started.');
+        clack.log.success('pi-discord-gateway.service is active');
+      } catch (err) {
+        s.stop('Service installation failed.');
+        clack.log.error(errorMessage(err));
+        clack.log.info('You can install manually later: piscord daemon install && piscord daemon start');
+      }
+    }
   }
 
-  console.log(`Pi auth: ${existsSync(AUTH_PATH) ? `found (${AUTH_PATH})` : `missing (${AUTH_PATH})`}`);
+  // ── Summary ──
+  const summaryLines = [
+    `Config:    ${configPath}`,
+    `Policy:    ${channelPolicy}`,
+    `Trigger:   ${triggerName}`,
+    `Sessions:  ${DEFAULT_SESSIONS_DIR}`,
+  ];
+  clack.note(summaryLines.join('\n'), 'Configuration');
+
+  clack.outro('Setup complete! Send a message in any Discord channel to test.');
+}
+
+function checkPrerequisites(): {
+  piPath: string | undefined;
+  piVersion: string | undefined;
+  authFound: boolean;
+  modelCount: number | undefined;
+} {
+  const piPath = readCommandOutput('which pi');
+  const piVersion = piPath ? readCommandOutput('pi --version') : undefined;
+  const authFound = existsSync(AUTH_PATH);
+  let modelCount: number | undefined;
 
   try {
-    const models = listAvailableModels();
-    console.log(`Available models: ${models.length}`);
-  } catch (err) {
-    console.log(`Available models: unavailable (${errorMessage(err)})`);
+    modelCount = listAvailableModels().length;
+  } catch {
+    modelCount = undefined;
   }
+
+  return { piPath, piVersion, authFound, modelCount };
 }
 
-async function promptRequired(rl: ReturnType<typeof createInterface>, label: string): Promise<string> {
-  while (true) {
-    const answer = (await rl.question(`${label}: `)).trim();
-    if (answer) {
-      return answer;
-    }
-    console.log(`${label} cannot be empty.`);
-  }
-}
-
-async function promptWithDefault(
-  rl: ReturnType<typeof createInterface>,
-  label: string,
-  defaultValue: string,
-): Promise<string> {
-  const answer = (await rl.question(`${label} [${defaultValue}]: `)).trim();
-  return answer || defaultValue;
+function isLinux(): boolean {
+  return process.platform === 'linux';
 }
 
 export function buildConfigFile(options: {
@@ -160,7 +232,6 @@ export function buildConfigFile(options: {
     '',
     '# Storage',
     `SESSIONS_DIR=${options.sessionsDir}`,
-    'ARCHIVE_RETENTION_DAYS=30',
     `DB_PATH=${options.dbPath}`,
     '',
     '# Logging',

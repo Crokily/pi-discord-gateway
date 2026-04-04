@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RegisteredChannel } from '../types.js';
+import { resolveConfigPath } from '../config.js';
 
 type DbModule = typeof import('../db.js');
 
@@ -20,6 +21,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 0;
     }
     case 'start': {
+      if (await maybeRunFirstTimeSetup()) return 0;
       const { startGateway } = await import('../index.js');
       await startGateway();
       return 0;
@@ -396,6 +398,23 @@ async function reportError(command: string | undefined, err: unknown): Promise<v
   }
 
   console.error(`Error: ${message}`);
+}
+
+async function maybeRunFirstTimeSetup(): Promise<boolean> {
+  const configPath = resolveConfigPath();
+  if (existsSync(configPath)) return false;
+
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (!interactive) {
+    throw new Error(
+      `No config found at ${configPath}. Run "piscord setup" first, or set PIDG_CONFIG to point to your config file.`,
+    );
+  }
+
+  console.log(`No config found at ${configPath}. Starting first-time setup...\n`);
+  const { runSetup } = await import('./setup.js');
+  await runSetup([]);
+  return true;
 }
 
 function isDirectExecution(): boolean {

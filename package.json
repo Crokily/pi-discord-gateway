@@ -1,6 +1,6 @@
 {
   "name": "piscord",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Lightweight Discord gateway for pi coding agent",
   "license": "MIT",
   "repository": {
@@ -44,7 +44,8 @@
     "@mariozechner/pi-coding-agent": "*"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "@clack/prompts": "^0.11.0",
+    "better-sqlite3": "^12.0.0",
     "croner": "^10.0.1",
     "discord.js": "^14.18.0",
     "dotenv": "^16.5.0",

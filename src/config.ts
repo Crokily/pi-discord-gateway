@@ -127,7 +127,7 @@ export const config = {
   dbPath: env('DB_PATH', resolve(DEFAULT_DATA_DIR, 'gateway.db')),
 
   /** Bot trigger name (default: bot's own display name) */
-  triggerName: env('TRIGGER_NAME', 'Andy'),
+  triggerName: env('TRIGGER_NAME', 'pi'),
 
   /** Max concurrent agent invocations */
   maxConcurrency: envInt('MAX_CONCURRENCY', 3, { min: 1 }),

@@ -318,7 +318,7 @@ function ensureManagedChannel(interaction: ChatInputCommandInteraction): Registe
 }
 
 function notRegisteredMessage(): string {
-  return 'This channel is not registered with the gateway yet. Register it via the CLI first.';
+  return 'This channel is not registered yet. Send a regular message in this channel first — the gateway will auto-register it (if channel policy is `open` or `open-trigger`).';
 }
 
 function buildStatusMessage(effective: EffectiveChannelSettings, sessionStatus: ChannelSessionStatus): string {
