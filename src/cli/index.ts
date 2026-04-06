@@ -97,7 +97,7 @@ export function formatHelpText(): string {
     '  piscord task enable <id>                      Enable a scheduled task',
     '  piscord task disable <id>                     Disable a scheduled task',
     '  piscord channels                              List registered channels',
-    '  piscord send --channel <jid> --file <path> [--file <path> ...] [--text <message>]',
+    '  piscord send --channel <jid> [--text <message>] [--file <path> ...]',
     '  piscord register <id> <name> [opts]          Register a Discord channel',
     '  piscord unregister <id>                       Unregister a channel',
     '  piscord daemon install                        Install systemd user service',
@@ -228,7 +228,7 @@ async function cliListChannels(): Promise<void> {
 }
 
 async function cliSend(args: string[]): Promise<void> {
-  const usage = 'Usage: piscord send --channel <jid> --file <path> [--file <path> ...] [--text <message>]';
+  const usage = 'Usage: piscord send --channel <jid> [--text <message>] [--file <path> ...]';
   let channel: string | undefined;
   let text: string | undefined;
   const files: string[] = [];
@@ -258,13 +258,22 @@ async function cliSend(args: string[]): Promise<void> {
     }
   }
 
-  if (!channel || files.length === 0) {
+  if (!channel) {
     throw new Error(usage);
+  }
+
+  if (!text && files.length === 0) {
+    throw new Error(`${usage}\nAt least one of --text or --file is required.`);
   }
 
   const { sendFilesToDiscord } = await import('../discord/send.js');
   const channelJid = toDiscordChannelJid(channel);
   const result = await sendFilesToDiscord({ channelJid, text, files });
+  if (result.sentFiles === 0) {
+    console.log(`Sent message to ${channelJid}`);
+    return;
+  }
+
   console.log(`Sent ${result.sentFiles} file(s) to ${channelJid}`);
 }
 

@@ -29,7 +29,7 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 - **Discord slash commands** — `/pi status`, `/pi model`, `/pi thinking`, `/pi new`, `/pi stop`
 - **Abort command** — `/pi stop` terminates the running task and clears queued messages
 - **Attachment relay** — Discord file uploads are downloaded and passed to `pi` via `@file`
-- **File sending** — `piscord send` lets pi send files to any Discord channel
+- **Message and file sending** — `piscord send` lets pi send plain text, files, or both to any Discord channel
 - **Scheduled tasks** — cron or one-time tasks that trigger pi sessions on schedule
 - **Archive auto-cleanup** — archived sessions are cleaned up after a configurable retention period
 - **Typing indicators** — shows "bot is typing" while `pi` processes
@@ -132,17 +132,19 @@ piscord task enable <id>       # Resume
 piscord task remove <id>       # Delete
 ```
 
-### Sending files to Discord
+### Sending messages and files to Discord
 
-pi can send files to any Discord channel using the gateway's built-in file relay.
+pi can send plain text messages, files, or both to any Discord channel using the gateway's built-in relay.
 
-When you ask pi to send a file, it runs:
+When you ask pi to send something, it runs commands like:
 
 ```bash
+piscord send --channel dc:123456789 --text "hello"
 piscord send --channel dc:123456789 --file /path/to/report.pdf --text "Here's the report"
 piscord send --channel dc:123456789 --file chart.png --file data.csv
 ```
 
+- `--text` works on its own
 - Up to 10 files per message (Discord limit)
 - Respects `MAX_ATTACHMENT_BYTES` per file
 - Works independently — no running gateway daemon required
@@ -207,7 +209,7 @@ piscord channels                              List registered channels
 piscord register <id> <name> [options]        Register a channel
 piscord unregister <id>                       Unregister a channel
 
-piscord send --channel <jid> --file <path> [--file <path> ...] [--text <msg>]
+piscord send --channel <jid> [--text <msg>] [--file <path> ...]
 
 piscord task add --name <n> --schedule <cron|iso> --channel <jid> --prompt <text> [--once]
 piscord task list | remove <id> | enable <id> | disable <id>

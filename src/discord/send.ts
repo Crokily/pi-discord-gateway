@@ -19,8 +19,10 @@ export function validateSendRequest(
   request: SendRequest,
   options: { maxAttachmentBytes: number; fileStat: (path: string) => { size: number } },
 ): void {
-  if (request.files.length === 0) {
-    throw new Error('At least one file is required.');
+  const hasText = Boolean(request.text?.trim());
+
+  if (!hasText && request.files.length === 0) {
+    throw new Error('Either text or at least one file is required.');
   }
 
   if (request.files.length > 10) {
@@ -68,7 +70,10 @@ export async function sendFilesToDiscord(request: SendRequest): Promise<{ sentFi
       throw new Error(`Channel not found or not text-based: ${channelJid}`);
     }
 
-    await channel.send({ content: request.text || undefined, files: attachments });
+    await channel.send({
+      content: request.text || undefined,
+      ...(attachments.length > 0 ? { files: attachments } : {}),
+    });
     return { sentFiles: attachments.length };
   } finally {
     client.destroy();
