@@ -1,10 +1,12 @@
 # piscord
 
-A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). It receives Discord messages, queues them in SQLite, invokes `pi` as a subprocess, and sends responses back — keeping a persistent session per channel.
+A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). It receives Discord messages, queues them in SQLite, invokes `pi` as a subprocess, and sends responses back -- keeping a persistent session per channel.
+
+**Current version: 1.4.1** (see [Changelog](./CHANGELOG.md) for details)
 
 ```bash
 npm install -g piscord
-piscord setup                 # interactive wizard — walks you through everything
+piscord setup                 # interactive wizard -- walks you through everything
 ```
 
 That's it. The setup wizard checks prerequisites, asks for your Discord bot token, lets you pick a channel policy, and optionally installs + starts a systemd service. Your bot is live in under a minute.
@@ -314,6 +316,19 @@ npm test             # Run Vitest suite
 ## License
 
 MIT
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.4.1 | 2026-04-06 | Fixed text-only sends via piscord send |
+| 1.4.0 | 2026-04-06 | Added per-channel working directories |
+| 1.3.0 | 2026-04-04 | Improved setup UX, faster install |
+| 1.2.0 | 2026-04-04 | Added channel policy, abort, scheduler, send-file |
+| 1.1.0 | 2026-03-31 | Renamed package to piscord |
+| 1.0.0 | 2026-03-28 | Initial release |
+
+See [Changelog](./CHANGELOG.md) for full details.
 
 ## Acknowledgments
 
