@@ -1,6 +1,7 @@
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent';
-import { supportsXhigh, type Model } from '@mariozechner/pi-ai';
+import type { Model } from '@mariozechner/pi-ai';
 import { THINKING_LEVELS, type ThinkingLevel } from '../types.js';
+import { supportsModelXhigh } from './pi-ai-compat.js';
 
 const CACHE_TTL_MS = 30_000;
 
@@ -31,7 +32,7 @@ export function listAvailableModels(options?: { forceRefresh?: boolean }): Avail
   const authStorage = AuthStorage.create();
   authStorage.reload();
 
-  const registry = new ModelRegistry(authStorage);
+  const registry = createModelRegistry(authStorage);
   registry.refresh();
 
   const models = registry.getAvailable()
@@ -139,6 +140,19 @@ export function toModelChoiceName(model: AvailableModelInfo): string {
   return label.length > 100 ? `${label.slice(0, 97)}...` : label;
 }
 
+function createModelRegistry(authStorage: AuthStorage): ModelRegistry {
+  const registryClass = ModelRegistry as unknown as {
+    create?: (authStorage: AuthStorage) => ModelRegistry;
+    new (authStorage: AuthStorage): ModelRegistry;
+  };
+
+  if (typeof registryClass.create === 'function') {
+    return registryClass.create(authStorage);
+  }
+
+  return new registryClass(authStorage);
+}
+
 function toAvailableModelInfo(model: Model<any>): AvailableModelInfo {
   return {
     ref: `${model.provider}/${model.id}`,
@@ -146,7 +160,7 @@ function toAvailableModelInfo(model: Model<any>): AvailableModelInfo {
     id: model.id,
     name: model.name || model.id,
     reasoning: Boolean(model.reasoning),
-    supportsXhigh: supportsXhigh(model),
+    supportsXhigh: supportsModelXhigh(model),
   };
 }
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - 2026-05-03
+
+### Fixed
+- Restore startup compatibility with @mariozechner/pi-ai 0.72.x thinking level APIs
+- Keep legacy @mariozechner/pi-ai compatibility by falling back to the older `supportsXhigh` helper when available
+
 ## [1.4.2] - 2026-04-06
 
 ### Fixed
