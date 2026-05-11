@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { resolve as pathResolve } from 'node:path';
 import { type AttachmentMeta } from '../discord/attachments.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -93,10 +94,16 @@ export async function invokeAgent(
   // Prompt (must be last)
   args.push('-p', userText);
 
-  logger.debug({ bin: config.piBin, args: args.slice(0, -1), channelFolder, cwd: effectiveCwd }, 'Spawning pi');
+  // Windows: npm installs pi as a .cmd wrapper which cannot be spawned directly
+  // (Node's child_process.spawn does not resolve .cmd extensions without shell: true).
+  // Using shell: true is not viable because cmd.exe splits -p arguments at newlines.
+  // Instead, resolve to node.exe + the pi CLI entry point directly.
+  const { bin: effectiveBin, args: effectiveArgs } = resolvePiSpawn(config.piBin, args);
+
+  logger.debug({ bin: effectiveBin, args: effectiveArgs.slice(0, -1), channelFolder, cwd: effectiveCwd }, 'Spawning pi');
 
   return new Promise<AgentResult>((resolve, reject) => {
-    const proc = spawn(config.piBin, args, {
+    const proc = spawn(effectiveBin, effectiveArgs, {
       cwd: effectiveCwd,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -200,9 +207,10 @@ async function getSessionStatsViaRpc(
   cwd: string,
 ): Promise<{ tokens: SessionTokenUsage; contextUsage?: SessionContextUsage }> {
   const args = ['--mode', 'rpc', '--session', sessionFile];
+  const { bin: rpcBin, args: rpcArgs } = resolvePiSpawn(config.piBin, args);
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(config.piBin, args, {
+    const proc = spawn(rpcBin, rpcArgs, {
       cwd,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -353,4 +361,26 @@ function toNumber(value: number | undefined): number {
 
 function toNullableNumber(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * On Windows, npm installs CLI tools as .cmd wrappers which Node's spawn()
+ * cannot execute directly (it doesn't resolve .cmd without shell: true).
+ * Using shell: true breaks multiline -p arguments because cmd.exe treats
+ * newlines as command separators, causing fragmented prompts and duplicate
+ * responses. This helper resolves the pi binary to node.exe + the CLI
+ * entry point script, which can be spawned without a shell.
+ */
+function resolvePiSpawn(piBin: string, args: string[]): { bin: string; args: string[] } {
+  if (process.platform !== 'win32' || piBin !== 'pi') {
+    return { bin: piBin, args };
+  }
+  const cliJs = pathResolve(
+    process.env.APPDATA!,
+    'npm/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
+  );
+  return {
+    bin: process.execPath,
+    args: [cliJs, ...args],
+  };
 }
