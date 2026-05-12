@@ -6,6 +6,7 @@ import * as clack from '@clack/prompts';
 import { listAvailableModels } from '../agent/model-catalog.js';
 import { resolveConfigPath } from '../config.js';
 
+const SERVICE_NAME = 'pi-discord-gateway';
 const DEFAULT_TRIGGER_NAME = 'pi';
 const DEFAULT_WORKING_DIR = homedir();
 const DEFAULT_DATA_DIR = resolve(homedir(), '.local/share/piscord-gateway');
@@ -133,23 +134,24 @@ export async function runSetup(args: string[]): Promise<void> {
   clack.log.success(`Config written to: ${configPath}`);
 
   // ── Daemon install + start ──
-  if (interactive && isLinux()) {
+  if (interactive && isUnix()) {
+    const serviceName = process.platform === 'darwin' ? 'launchd' : 'systemd';
     const installDaemon = await clack.confirm({
-      message: 'Install as systemd service and start now?',
+      message: `Install as a background service (${serviceName}) and start now?`,
       initialValue: true,
     });
     if (clack.isCancel(installDaemon)) { clack.cancel('Setup cancelled.'); process.exit(0); }
 
     if (installDaemon) {
       const s = clack.spinner();
-      s.start('Installing systemd service...');
+      s.start(`Installing ${serviceName} service...`);
       try {
         const { runDaemon } = await import('./daemon.js');
         runDaemon('install');
         s.message('Starting service...');
         runDaemon('start');
         s.stop('Service installed and started.');
-        clack.log.success('pi-discord-gateway.service is active');
+        clack.log.success(`${SERVICE_NAME} is active`);
       } catch (err) {
         s.stop('Service installation failed.');
         clack.log.error(errorMessage(err));
@@ -190,8 +192,8 @@ function checkPrerequisites(): {
   return { piPath, piVersion, authFound, modelCount };
 }
 
-function isLinux(): boolean {
-  return process.platform === 'linux';
+function isUnix(): boolean {
+  return process.platform === 'linux' || process.platform === 'darwin';
 }
 
 export function buildConfigFile(options: {
@@ -242,7 +244,12 @@ export function buildConfigFile(options: {
 
 function readCommandOutput(command: string): string | undefined {
   try {
-    return execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
+    const stdout = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    if (stdout) return stdout;
+  } catch {}
+  // Some commands (e.g. pi --version) output to stderr — retry with merge
+  try {
+    return execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
   } catch {
     return undefined;
   }

@@ -37,6 +37,12 @@ export function runStatus(): void {
 }
 
 function getServiceStatus(): string {
+  if (process.platform === 'linux') return getLinuxServiceStatus();
+  if (process.platform === 'darwin') return getMacServiceStatus();
+  return 'unsupported platform';
+}
+
+function getLinuxServiceStatus(): string {
   const result = spawnSync('systemctl', ['--user', 'is-active', SERVICE_NAME], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -48,6 +54,23 @@ function getServiceStatus(): string {
 
   const status = `${result.stdout || result.stderr || ''}`.trim();
   return status || `inactive (exit ${result.status ?? 'unknown'})`;
+}
+
+function getMacServiceStatus(): string {
+  const uid = spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout.trim();
+  const result = spawnSync('launchctl', ['print', `gui/${uid}/com.${SERVICE_NAME}`], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.status !== 0) {
+    return 'not loaded';
+  }
+
+  const output = result.stdout;
+  const state = output.match(/state\s*=\s*(\S+)/)?.[1] ?? 'unknown';
+  const pid = output.match(/pid\s*=\s*(\d+)/)?.[1];
+  return pid ? `running (pid ${pid}, ${state})` : `loaded (${state})`;
 }
 
 function getRegisteredChannelCount(): number {
@@ -90,7 +113,12 @@ function countSessionFolders(baseDir: string): number {
 
 function readCommandOutput(command: string): string | undefined {
   try {
-    return execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
+    const stdout = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    if (stdout) return stdout;
+  } catch {}
+  // Some commands (e.g. pi --version) output to stderr — retry with merge
+  try {
+    return execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
   } catch {
     return undefined;
   }
