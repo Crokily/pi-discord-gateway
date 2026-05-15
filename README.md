@@ -2,19 +2,20 @@
 
 A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). It receives Discord messages, queues them in SQLite, invokes `pi` as a subprocess, and sends responses back -- keeping a persistent session per channel.
 
-**Current version: 1.4.2** (see [Changelog](./CHANGELOG.md) for details)
+**Current version: 1.5.1** (see [Changelog](./CHANGELOG.md) for details)
 
 ```bash
 npm install -g piscord
 piscord setup                 # interactive wizard -- walks you through everything
 ```
 
-That's it. The setup wizard checks prerequisites, asks for your Discord bot token, lets you pick a channel policy, and optionally installs + starts a systemd service. Your bot is live in under a minute.
+That's it. The setup wizard checks prerequisites, asks for your Discord bot token, lets you pick a channel policy, and optionally installs + starts a background service. Your bot is live in under a minute.
 
 ## Prerequisites
 
 - **Node.js** ≥ 20
-- **[pi](https://github.com/badlogic/pi-mono)** installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
+- **Linux, macOS, or Windows**
+- **[pi](https://github.com/badlogic/pi-mono)** ≥ 0.74.0 installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
 - **Discord bot token** — [create one here](https://discord.com/developers/applications)
   - Enable **Message Content Intent** under Privileged Gateway Intents
   - Bot permissions: `Send Messages`, `Read Message History`, `View Channels`, `Attach Files`
@@ -34,10 +35,11 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 - **Message and file sending** — `piscord send` lets pi send plain text, files, or both to any Discord channel
 - **Scheduled tasks** — cron or one-time tasks that trigger pi sessions on schedule
 - **Archive auto-cleanup** — archived sessions are cleaned up after a configurable retention period
+- **Cross-platform** — runs on Linux, macOS, and Windows with platform-aware defaults
 - **Typing indicators** — shows "bot is typing" while `pi` processes
 - **Message splitting** — handles Discord's 2000-character limit automatically
-- **systemd integration** — `piscord daemon install` generates a user service
-- **XDG-compliant paths** — config in `~/.config/`, data in `~/.local/share/`
+- **Daemon management** — systemd on Linux, launchd on macOS
+- **Platform-aware paths** — XDG on Linux, `~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows
 
 ## How It Works
 
@@ -151,20 +153,24 @@ piscord send --channel dc:123456789 --file chart.png --file data.csv
 - Respects `MAX_ATTACHMENT_BYTES` per file
 - Works independently — no running gateway daemon required
 
-## systemd Service
+## Daemon Management
 
-The setup wizard offers to install a systemd user service automatically. You can also manage it manually:
+The setup wizard offers to install a background service automatically. You can also manage it manually:
 
 ```bash
-piscord daemon install   # Generate + enable user service
+piscord daemon install   # Generate + enable service
 piscord daemon start     # Start
 piscord daemon status    # Check status
-piscord daemon logs      # Tail journal output
+piscord daemon logs      # Tail log output
 piscord daemon stop      # Stop
 piscord daemon uninstall # Remove the service
 ```
 
-> **Headless servers**: enable user lingering so the service runs without an active login session:
+- **Linux** — uses a systemd user service
+- **macOS** — uses a launchd user agent
+- **Windows** — daemon management is not yet supported; run `piscord start` in a terminal or use Task Scheduler manually
+
+> **Headless Linux servers**: enable user lingering so the service runs without an active login session:
 >
 > ```bash
 > sudo loginctl enable-linger $USER
@@ -172,9 +178,9 @@ piscord daemon uninstall # Remove the service
 
 ## Configuration Reference
 
-Config file: `~/.config/pi-discord-gateway/config.env`
+Config file location depends on your OS (see Data Locations). On Linux: `~/.config/pi-discord-gateway/config.env`
 
-Most users won't need to edit this file directly — `piscord setup` generates it for you. If you do want to tweak advanced settings, you can edit the file manually, or ask your pi to configure it for you.
+Most users won't need to edit this file directly — `piscord setup` generates it for you. If you do want to tweak advanced settings, you can edit the file manually, or ask your pi to configure it for you. Run `piscord status` to see the config path on your system.
 
 | Variable                     | Default                                     | Description                                                                |
 | ---------------------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
@@ -195,8 +201,8 @@ Most users won't need to edit this file directly — `piscord setup` generates i
 | `ARCHIVE_RETENTION_DAYS`     | `30`                                        | Days to keep archived sessions (0 = never clean)                           |
 | `MAX_ATTACHMENT_BYTES`       | `26214400`                                  | Max size per attachment (0 = no limit)                                     |
 | `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800`                                  | Max combined attachment size (0 = no limit)                                |
-| `SESSIONS_DIR`               | `~/.local/share/piscord-gateway/sessions`   | Session storage directory                                                  |
-| `DB_PATH`                    | `~/.local/share/piscord-gateway/gateway.db` | SQLite database path                                                       |
+| `SESSIONS_DIR`               | _(platform default)_/sessions               | Session storage directory (see Data Locations)                             |
+| `DB_PATH`                    | _(platform default)_/gateway.db             | SQLite database path (see Data Locations)                                  |
 | `LOG_LEVEL`                  | `info`                                      | Log level: debug/info/warn/error                                           |
 
 After changing config, restart the service: `piscord daemon stop && piscord daemon start`
@@ -236,12 +242,14 @@ piscord help                                  Show help
 
 ## Data Locations
 
-| Item     | Default path                                |
-| -------- | ------------------------------------------- |
-| Config   | `~/.config/pi-discord-gateway/config.env`   |
-| Database | `~/.local/share/piscord-gateway/gateway.db` |
-| Sessions | `~/.local/share/piscord-gateway/sessions/`  |
-| pi auth  | `~/.pi/agent/auth.json`                     |
+Paths are platform-aware. Defaults by OS:
+
+| Item     | Linux                                       | macOS                                                       | Windows                                        |
+| -------- | ------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------- |
+| Config   | `~/.config/pi-discord-gateway/config.env`   | `~/Library/Application Support/piscord-gateway/config.env`  | `%APPDATA%\piscord-gateway\config.env`         |
+| Database | `~/.local/share/piscord-gateway/gateway.db` | `~/Library/Application Support/piscord-gateway/gateway.db`  | `%LOCALAPPDATA%\piscord-gateway\gateway.db`    |
+| Sessions | `~/.local/share/piscord-gateway/sessions/`  | `~/Library/Application Support/piscord-gateway/sessions/`   | `%LOCALAPPDATA%\piscord-gateway\sessions\`     |
+| pi auth  | `~/.pi/agent/auth.json`                     | `~/.pi/agent/auth.json`                                     | `~/.pi/agent/auth.json`                        |
 
 ## Alternative Installation
 
@@ -282,11 +290,12 @@ node dist/cli/index.js setup
 </details>
 
 <details>
-<summary><strong>systemd service won't start</strong></summary>
+<summary><strong>Daemon service won't start</strong></summary>
 
 - `piscord daemon status` — check for errors
-- `piscord daemon logs` — see journal output
-- For headless servers: `sudo loginctl enable-linger $USER`
+- `piscord daemon logs` — see log output
+- **Linux**: for headless servers, run `sudo loginctl enable-linger $USER`
+- **macOS**: check `~/Library/Logs/piscord-gateway/` for launchd output
 </details>
 
 <details>
@@ -320,15 +329,18 @@ MIT
 
 ## Version History
 
-| Version | Date       | Changes                                           |
-| ------- | ---------- | ------------------------------------------------- |
-| 1.4.2   | 2026-04-06 | Fixed default XDG data directory mismatch         |
-| 1.4.1   | 2026-04-06 | Fixed text-only sends via piscord send            |
-| 1.4.0   | 2026-04-06 | Added per-channel working directories             |
-| 1.3.0   | 2026-04-04 | Improved setup UX, faster install                 |
-| 1.2.0   | 2026-04-04 | Added channel policy, abort, scheduler, send-file |
-| 1.1.0   | 2026-03-31 | Renamed package to piscord                        |
-| 1.0.0   | 2026-03-28 | Initial release                                   |
+| Version | Date       | Changes                                                    |
+| ------- | ---------- | ---------------------------------------------------------- |
+| 1.5.1   | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package     |
+| 1.5.0   | 2026-05-15 | Cross-platform support (macOS, Windows), launchd, new deps |
+| 1.4.3   | 2026-05-03 | Compatibility with older pi-ai thinking APIs               |
+| 1.4.2   | 2026-04-06 | Fixed default XDG data directory mismatch                  |
+| 1.4.1   | 2026-04-06 | Fixed text-only sends via piscord send                     |
+| 1.4.0   | 2026-04-06 | Added per-channel working directories                      |
+| 1.3.0   | 2026-04-04 | Improved setup UX, faster install                          |
+| 1.2.0   | 2026-04-04 | Added channel policy, abort, scheduler, send-file          |
+| 1.1.0   | 2026-03-31 | Renamed package to piscord                                 |
+| 1.0.0   | 2026-03-28 | Initial release                                            |
 
 See [Changelog](./CHANGELOG.md) for full details.
 
