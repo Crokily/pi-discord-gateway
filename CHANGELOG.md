@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-05-15
+
+### Added
+- macOS launchd support for `piscord daemon` commands — thanks @that-yolanda (#6)
+- Windows compatibility for pi subprocess spawning (dynamic .cmd shim resolution)
+- Windows `SIGBREAK` signal handling for graceful shutdown
+- Cross-platform executable lookup (`where` on Windows, `which` on Linux/macOS)
+
+### Changed
+- Migrate pi dependencies from `@mariozechner/*` to `@earendil-works/*` scope (pi v0.74.0+)
+- Platform-aware default paths: XDG on Linux, `~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows
+- Build script now works cross-platform (replaced `rm -rf` with Node.js `fs.rmSync`)
+- Help text uses platform-neutral wording for daemon commands
+
+### Fixed
+- `piscord status` no longer crashes on macOS/Windows (removed unconditional systemctl dependency)
+- `which` command replaced with cross-platform executable lookup in setup and status
+
 ## [1.4.3] - 2026-05-03
 
 ### Fixed
