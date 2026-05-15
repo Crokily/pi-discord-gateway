@@ -118,12 +118,18 @@ function findExecutable(name: string): string | undefined {
 
 function readCommandOutput(command: string): string | undefined {
   try {
-    const stdout = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const stdout = execSync(command, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
     if (stdout) return stdout;
   } catch {}
   // Some commands (e.g. pi --version) output to stderr — retry with merge
   try {
-    return execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
+    return (
+      execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() ||
+      undefined
+    );
   } catch {
     return undefined;
   }

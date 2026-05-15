@@ -6,7 +6,12 @@ import {
   type Client,
   type InteractionReplyOptions,
 } from 'discord.js';
-import { getChannelSessionStatus, type ChannelSessionStatus, type SessionContextUsage, type SessionTokenUsage } from '../agent/invoke.js';
+import {
+  getChannelSessionStatus,
+  type ChannelSessionStatus,
+  type SessionContextUsage,
+  type SessionTokenUsage,
+} from '../agent/invoke.js';
 import { config } from '../config.js';
 import {
   clearChannelModelOverride,
@@ -51,15 +56,13 @@ const PI_COMMAND = new SlashCommandBuilder()
       .addStringOption((option) =>
         option
           .setName('model')
-          .setDescription('Choose one of pi\'s currently available models')
+          .setDescription("Choose one of pi's currently available models")
           .setRequired(true)
           .setAutocomplete(true),
       ),
   )
   .addSubcommand((sub) =>
-    sub
-      .setName('reset-model')
-      .setDescription('Reset this channel to the gateway\'s default model'),
+    sub.setName('reset-model').setDescription("Reset this channel to the gateway's default model"),
   )
   .addSubcommand((sub) =>
     sub
@@ -81,9 +84,7 @@ const PI_COMMAND = new SlashCommandBuilder()
       ),
   )
   .addSubcommand((sub) =>
-    sub
-      .setName('new')
-      .setDescription('Start a fresh pi session for this channel'),
+    sub.setName('new').setDescription('Start a fresh pi session for this channel'),
   )
   .addSubcommand((sub) =>
     sub
@@ -139,7 +140,10 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
         await interaction.reply(reply(`Unknown subcommand: ${subcommand}`, interaction));
     }
   } catch (err: any) {
-    logger.error({ err: err.message, command: interaction.commandName, subcommand }, 'Slash command failed');
+    logger.error(
+      { err: err.message, command: interaction.commandName, subcommand },
+      'Slash command failed',
+    );
     const payload = reply(`⚠️ ${err.message}`, interaction);
     if (interaction.replied) {
       await interaction.followUp(payload);
@@ -159,17 +163,22 @@ async function handleNew(interaction: ChatInputCommandInteraction): Promise<void
   }
 
   if (isChannelProcessing(channel.jid)) {
-    await interaction.reply(reply(
-      'This channel is currently processing a message. Wait for it to finish, then run /new again.',
-      interaction,
-    ));
+    await interaction.reply(
+      reply(
+        'This channel is currently processing a message. Wait for it to finish, then run /new again.',
+        interaction,
+      ),
+    );
     return;
   }
 
   const cleared = clearPendingMessages(channel.jid);
   const archivedSession = rotateChannelSessionDir(channel.folder);
 
-  logger.info({ jid: channel.jid, cleared, archived: Boolean(archivedSession) }, 'Channel session reset');
+  logger.info(
+    { jid: channel.jid, cleared, archived: Boolean(archivedSession) },
+    'Channel session reset',
+  );
 
   const notes = ['Started a fresh session for this channel.'];
   if (cleared > 0) {
@@ -187,7 +196,9 @@ async function handleStop(interaction: ChatInputCommandInteraction): Promise<voi
   const result = abortChannelTask(jid);
 
   if (!result.aborted && result.cleared === 0) {
-    await interaction.reply(reply('No active task or queued messages in this channel.', interaction));
+    await interaction.reply(
+      reply('No active task or queued messages in this channel.', interaction),
+    );
     return;
   }
 
@@ -196,7 +207,9 @@ async function handleStop(interaction: ChatInputCommandInteraction): Promise<voi
     notes.push('Aborted the current task.');
   }
   if (result.cleared > 0) {
-    notes.push(`Cleared ${result.cleared} queued ${result.cleared === 1 ? 'message' : 'messages'}.`);
+    notes.push(
+      `Cleared ${result.cleared} queued ${result.cleared === 1 ? 'message' : 'messages'}.`,
+    );
   }
 
   await interaction.reply(reply(notes.join(' '), interaction));
@@ -209,7 +222,9 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
     return;
   }
 
-  await interaction.deferReply(interaction.inGuild() ? { flags: MessageFlags.Ephemeral } : undefined);
+  await interaction.deferReply(
+    interaction.inGuild() ? { flags: MessageFlags.Ephemeral } : undefined,
+  );
 
   const effective = computeEffectiveChannelSettings(channel);
   const sessionStatus = await getChannelSessionStatus(channel.folder, effective.effectiveCwd);
@@ -245,7 +260,13 @@ async function handleModelSet(interaction: ChatInputCommandInteraction): Promise
 
   const notes = [`Model set to ${selectedModel.ref} for this channel.`];
   if (thinkingResolution.adjusted) {
-    notes.push(buildThinkingAdjustmentMessage(thinkingResolution.requested, thinkingResolution.effective, selectedModel));
+    notes.push(
+      buildThinkingAdjustmentMessage(
+        thinkingResolution.requested,
+        thinkingResolution.effective,
+        selectedModel,
+      ),
+    );
   }
 
   await interaction.reply(reply(notes.join('\n'), interaction));
@@ -269,8 +290,12 @@ async function handleModelReset(interaction: ChatInputCommandInteraction): Promi
   }
 
   if (effective.thinkingAdjusted) {
-    const currentThinking = effective.hasManagedThinking ? effective.effectiveThinking : '(pi runtime default)';
-    notes.push(`Current effective thinking is ${currentThinking}. ${effective.thinkingAdjustmentMessage}`);
+    const currentThinking = effective.hasManagedThinking
+      ? effective.effectiveThinking
+      : '(pi runtime default)';
+    notes.push(
+      `Current effective thinking is ${currentThinking}. ${effective.thinkingAdjustmentMessage}`,
+    );
   }
 
   await interaction.reply(reply(notes.join('\n'), interaction));
@@ -296,15 +321,23 @@ async function handleThinkingSet(interaction: ChatInputCommandInteraction): Prom
 
   const notes = [`Thinking level set to ${resolution.effective} for this channel.`];
   if (resolution.adjusted) {
-    notes.push(buildThinkingAdjustmentMessage(resolution.requested, resolution.effective, effective.modelInfo));
+    notes.push(
+      buildThinkingAdjustmentMessage(
+        resolution.requested,
+        resolution.effective,
+        effective.modelInfo,
+      ),
+    );
   }
 
   await interaction.reply(reply(notes.join('\n'), interaction));
 }
 
-function ensureManagedChannel(interaction: ChatInputCommandInteraction): RegisteredChannel | undefined {
+function ensureManagedChannel(
+  interaction: ChatInputCommandInteraction,
+): RegisteredChannel | undefined {
   const jid = `dc:${interaction.channelId}`;
-  let channel = getChannel(jid);
+  const channel = getChannel(jid);
   if (channel) return channel;
 
   // Allow slash commands to bootstrap DM channels, same as normal DM messages.
@@ -321,7 +354,10 @@ function notRegisteredMessage(): string {
   return 'This channel is not registered yet. Send a regular message in this channel first — the gateway will auto-register it (if channel policy is `open` or `open-trigger`).';
 }
 
-function buildStatusMessage(effective: EffectiveChannelSettings, sessionStatus: ChannelSessionStatus): string {
+function buildStatusMessage(
+  effective: EffectiveChannelSettings,
+  sessionStatus: ChannelSessionStatus,
+): string {
   const rows: Array<[string, string]> = [
     ['Model', formatModelValue(effective)],
     ['Thinking', formatThinkingValue(effective)],
@@ -334,7 +370,10 @@ function buildStatusMessage(effective: EffectiveChannelSettings, sessionStatus: 
 
   rows.push(
     ['Reasoning', effective.modelInfo ? (effective.modelInfo.reasoning ? 'yes' : 'no') : 'unknown'],
-    ['Session', sessionStatus.createdAt ? formatSessionCreatedAt(sessionStatus.createdAt) : 'not started'],
+    [
+      'Session',
+      sessionStatus.createdAt ? formatSessionCreatedAt(sessionStatus.createdAt) : 'not started',
+    ],
     ['Tokens', formatTokenUsage(sessionStatus.tokens, sessionStatus.statsSource)],
     ['Context', formatContextUsage(sessionStatus.contextUsage)],
   );
@@ -359,7 +398,11 @@ function formatThinkingValue(effective: EffectiveChannelSettings): string {
 }
 
 function formatThinkingFallback(effective: EffectiveChannelSettings): string {
-  if (effective.modelInfo && !effective.modelInfo.reasoning && effective.requestedThinking !== 'off') {
+  if (
+    effective.modelInfo &&
+    !effective.modelInfo.reasoning &&
+    effective.requestedThinking !== 'off'
+  ) {
     return `${effective.requestedThinking} -> off (no reasoning)`;
   }
 
@@ -391,10 +434,16 @@ function formatSessionCreatedAt(timestamp: string): string {
     return timestamp;
   }
 
-  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+  return date
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\.\d{3}Z$/, ' UTC');
 }
 
-function formatTokenUsage(tokens: SessionTokenUsage | undefined, statsSource: ChannelSessionStatus['statsSource']): string {
+function formatTokenUsage(
+  tokens: SessionTokenUsage | undefined,
+  statsSource: ChannelSessionStatus['statsSource'],
+): string {
   if (!tokens) {
     return statsSource === 'none' ? '0 total' : '?';
   }
@@ -415,7 +464,8 @@ function formatContextUsage(contextUsage: SessionContextUsage | undefined): stri
   }
 
   const tokens = contextUsage.tokens == null ? '?' : formatNumber(contextUsage.tokens);
-  const window = contextUsage.contextWindow == null ? '?' : formatNumber(contextUsage.contextWindow);
+  const window =
+    contextUsage.contextWindow == null ? '?' : formatNumber(contextUsage.contextWindow);
   const percent = contextUsage.percent == null ? '?' : `${formatPercent(contextUsage.percent)}%`;
   return `${tokens} / ${window} (${percent})`;
 }

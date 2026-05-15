@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an idea or improvement for pi-discord-gateway
+title: 'feat: '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please explain the problem and proposed solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem or limitation are you trying to solve?
+      placeholder: Describe the use case and current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe alternatives or workarounds you have considered.
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, screenshots, links, or implementation ideas.
+    validations:
+      required: false

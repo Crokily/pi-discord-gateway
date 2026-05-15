@@ -97,7 +97,9 @@ describe('register command cwd support', () => {
       logged.push(args.join(' '));
     });
 
-    await expect(main(['register', '123', 'my-server #general', '--cwd', '/workspace/project'])).resolves.toBe(0);
+    await expect(
+      main(['register', '123', 'my-server #general', '--cwd', '/workspace/project']),
+    ).resolves.toBe(0);
     expect(logged.join('\n')).toContain('Working directory: /workspace/project (channel override)');
 
     const db = await import('../src/db.js');

@@ -20,7 +20,13 @@ vi.mock('../src/discord/client.js', () => ({
 
 const originalEnv = { ...process.env };
 const tempDirs: string[] = [];
-const CONFIG_ENV_KEYS = ['DB_PATH', 'MAX_CONCURRENCY', 'PI_CWD', 'POLL_INTERVAL_MS', 'SESSIONS_DIR'];
+const CONFIG_ENV_KEYS = [
+  'DB_PATH',
+  'MAX_CONCURRENCY',
+  'PI_CWD',
+  'POLL_INTERVAL_MS',
+  'SESSIONS_DIR',
+];
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -92,10 +98,13 @@ async function runQueuedMessage(cwdOverride: string): Promise<{ cwd?: string } |
     });
 
     queue.startProcessingLoop();
-    await vi.waitFor(() => {
-      expect(invokeAgentMock).toHaveBeenCalledTimes(1);
-      expect(sendResponseMock).toHaveBeenCalledTimes(1);
-    }, { timeout: 2000, interval: 10 });
+    await vi.waitFor(
+      () => {
+        expect(invokeAgentMock).toHaveBeenCalledTimes(1);
+        expect(sendResponseMock).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 2000, interval: 10 },
+    );
 
     return invokeAgentMock.mock.calls[0]?.[2] as { cwd?: string } | undefined;
   } finally {

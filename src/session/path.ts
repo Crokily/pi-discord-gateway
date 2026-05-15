@@ -44,7 +44,12 @@ export function resolveChannelSessionDir(folder: string): string {
 /** Resolve a media directory for a message under a validated channel session directory. */
 export function resolveChannelMediaMessageDir(folder: string, messageId: string): string {
   const trimmedMessageId = messageId.trim();
-  if (!trimmedMessageId || /[\\/]/u.test(trimmedMessageId) || trimmedMessageId === '.' || trimmedMessageId === '..') {
+  if (
+    !trimmedMessageId ||
+    /[\\/]/u.test(trimmedMessageId) ||
+    trimmedMessageId === '.' ||
+    trimmedMessageId === '..'
+  ) {
     throw new Error(`Invalid media message id: ${messageId}`);
   }
 
@@ -60,7 +65,10 @@ export function rotateChannelSessionDir(folder: string): string | undefined {
 
   const parentDir = dirname(sessionDir);
   const sessionName = basename(sessionDir);
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
 
   let archiveDir = resolve(parentDir, `${sessionName}__archived_${stamp}`);
   let suffix = 1;

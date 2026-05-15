@@ -109,7 +109,8 @@ async function handleMessage(message: Message): Promise<void> {
 
   // ── Build content ──
   let content = message.content;
-  const senderName = message.member?.displayName || message.author.displayName || message.author.username;
+  const senderName =
+    message.member?.displayName || message.author.displayName || message.author.username;
   const sender = message.author.id;
   const timestamp = message.createdAt.toISOString();
 
@@ -230,7 +231,14 @@ async function handleMessage(message: Message): Promise<void> {
   if (!content) return;
 
   // ── Enqueue ──
-  enqueueMessage({ channelJid: jid, sender, senderName, content, timestamp, attachments: attachmentsJson });
+  enqueueMessage({
+    channelJid: jid,
+    sender,
+    senderName,
+    content,
+    timestamp,
+    attachments: attachmentsJson,
+  });
   logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
 

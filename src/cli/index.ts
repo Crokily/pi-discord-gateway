@@ -127,7 +127,9 @@ function printHelp(): void {
 
 async function cliRegister(args: string[]): Promise<void> {
   if (args.length < 2) {
-    throw new Error('Usage: piscord register <channel-id> <name> [--folder <name>] [--cwd <path>] [--no-trigger] [--main]');
+    throw new Error(
+      'Usage: piscord register <channel-id> <name> [--folder <name>] [--cwd <path>] [--no-trigger] [--main]',
+    );
   }
 
   const { validateSessionFolder } = await import('../session/path.js');
@@ -311,15 +313,17 @@ async function cliListTasks(): Promise<void> {
       return;
     }
 
-    console.table(tasks.map((task) => ({
-      id: task.id,
-      name: task.name,
-      type: task.type,
-      schedule: task.schedule,
-      channel: task.channel_jid,
-      enabled: task.enabled,
-      next_run_at: task.next_run_at ?? '',
-    })));
+    console.table(
+      tasks.map((task) => ({
+        id: task.id,
+        name: task.name,
+        type: task.type,
+        schedule: task.schedule,
+        channel: task.channel_jid,
+        enabled: task.enabled,
+        next_run_at: task.next_run_at ?? '',
+      })),
+    );
   });
 }
 
@@ -389,17 +393,23 @@ async function cliArchiveCleanup(args: string[]): Promise<void> {
     return;
   }
 
-  const result = cleanupArchivedSessions(config.sessionsDir, config.archiveRetentionDays, { dryRun });
+  const result = cleanupArchivedSessions(config.sessionsDir, config.archiveRetentionDays, {
+    dryRun,
+  });
   if (result.deleted.length === 0) {
     console.log(`No archived sessions ${dryRun ? 'would be deleted' : 'were deleted'}.`);
   } else {
-    console.log(`${dryRun ? 'Would delete' : 'Deleted'} ${result.deleted.length} archived session directories:`);
+    console.log(
+      `${dryRun ? 'Would delete' : 'Deleted'} ${result.deleted.length} archived session directories:`,
+    );
     for (const deleted of result.deleted) {
       console.log(`  ${deleted}`);
     }
   }
 
-  console.log(`Skipped ${result.skipped} archived ${result.skipped === 1 ? 'session' : 'sessions'}.`);
+  console.log(
+    `Skipped ${result.skipped} archived ${result.skipped === 1 ? 'session' : 'sessions'}.`,
+  );
 }
 
 async function reportError(command: string | undefined, err: unknown): Promise<void> {
@@ -515,7 +525,12 @@ function parseRegisterOptions(
   args: string[],
   validateSessionFolder: (folder: string) => string,
 ): { folder: string; requiresTrigger: boolean; isMain: boolean; cwdOverride?: string } {
-  const options: { folder: string; requiresTrigger: boolean; isMain: boolean; cwdOverride?: string } = {
+  const options: {
+    folder: string;
+    requiresTrigger: boolean;
+    isMain: boolean;
+    cwdOverride?: string;
+  } = {
     folder: validateSessionFolder(`ch_${channelId}`),
     requiresTrigger: true,
     isMain: false,
@@ -619,15 +634,16 @@ function parseTaskId(raw: string | undefined, usage: string): number {
 }
 
 function formatChannelSummary(channel: RegisteredChannel): string {
-  const flags = [
-    channel.isMain ? 'main' : '',
-    channel.requiresTrigger ? 'trigger' : 'all-messages',
-  ].filter(Boolean).join(', ');
+  const flags = [channel.isMain ? 'main' : '', channel.requiresTrigger ? 'trigger' : 'all-messages']
+    .filter(Boolean)
+    .join(', ');
   const overrides = [
     `cwd=${channel.cwdOverride || config.piCwd}${channel.cwdOverride ? ' (channel)' : ''}`,
     channel.modelOverride ? `model=${channel.modelOverride}` : '',
     channel.thinkingOverride ? `thinking=${channel.thinkingOverride}` : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return `  ${channel.jid}  ${channel.name}  [${flags}]  folder=${channel.folder}${overrides ? ` ${overrides}` : ''}`;
 }

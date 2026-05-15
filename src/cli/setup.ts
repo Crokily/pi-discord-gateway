@@ -20,7 +20,9 @@ export async function runSetup(args: string[]): Promise<void> {
   const configPath = resolveConfigPath();
 
   if (!interactive && !tokenArg) {
-    throw new Error('DISCORD_BOT_TOKEN must be provided as an argument when stdin is not interactive.');
+    throw new Error(
+      'DISCORD_BOT_TOKEN must be provided as an argument when stdin is not interactive.',
+    );
   }
 
   clack.intro('piscord setup');
@@ -31,9 +33,7 @@ export async function runSetup(args: string[]): Promise<void> {
     prereqs.piPath
       ? `  ✓ pi binary: ${prereqs.piPath}${prereqs.piVersion ? ` (${prereqs.piVersion})` : ''}`
       : '  ✗ pi binary: not found in PATH — install pi first',
-    prereqs.authFound
-      ? `  ✓ pi auth: found`
-      : `  ✗ pi auth: missing — run "pi" and log in first`,
+    prereqs.authFound ? `  ✓ pi auth: found` : `  ✗ pi auth: missing — run "pi" and log in first`,
     prereqs.modelCount !== undefined
       ? `  ✓ models: ${prereqs.modelCount} available`
       : `  ✗ models: unavailable`,
@@ -41,7 +41,9 @@ export async function runSetup(args: string[]): Promise<void> {
   clack.note(prereqLines.join('\n'), 'Prerequisites');
 
   if (!prereqs.piPath || !prereqs.authFound) {
-    clack.log.warn('Some prerequisites are missing. The gateway needs pi installed and logged in to work.');
+    clack.log.warn(
+      'Some prerequisites are missing. The gateway needs pi installed and logged in to work.',
+    );
   }
 
   // ── Token ──
@@ -52,10 +54,13 @@ export async function runSetup(args: string[]): Promise<void> {
       placeholder: 'Paste your bot token here',
       validate: (v) => {
         if (!v.trim()) return 'Token cannot be empty.';
-        if (v.trim().length < 50) return 'That doesn\'t look like a valid bot token.';
+        if (v.trim().length < 50) return "That doesn't look like a valid bot token.";
       },
     });
-    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    if (clack.isCancel(result)) {
+      clack.cancel('Setup cancelled.');
+      process.exit(0);
+    }
     token = result;
   }
 
@@ -72,7 +77,10 @@ export async function runSetup(args: string[]): Promise<void> {
       defaultValue: DEFAULT_TRIGGER_NAME,
       initialValue: DEFAULT_TRIGGER_NAME,
     });
-    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    if (clack.isCancel(result)) {
+      clack.cancel('Setup cancelled.');
+      process.exit(0);
+    }
     triggerName = result || DEFAULT_TRIGGER_NAME;
   }
 
@@ -100,7 +108,10 @@ export async function runSetup(args: string[]): Promise<void> {
       ],
       initialValue: 'open' as const,
     });
-    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    if (clack.isCancel(result)) {
+      clack.cancel('Setup cancelled.');
+      process.exit(0);
+    }
     channelPolicy = result;
   }
 
@@ -113,7 +124,10 @@ export async function runSetup(args: string[]): Promise<void> {
       defaultValue: DEFAULT_WORKING_DIR,
       initialValue: DEFAULT_WORKING_DIR,
     });
-    if (clack.isCancel(result)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    if (clack.isCancel(result)) {
+      clack.cancel('Setup cancelled.');
+      process.exit(0);
+    }
     workingDir = result || DEFAULT_WORKING_DIR;
   }
 
@@ -122,14 +136,17 @@ export async function runSetup(args: string[]): Promise<void> {
   mkdirSync(DEFAULT_DATA_DIR, { recursive: true });
   mkdirSync(DEFAULT_SESSIONS_DIR, { recursive: true });
 
-  writeFileSync(configPath, buildConfigFile({
-    token,
-    triggerName,
-    workingDir,
-    channelPolicy,
-    sessionsDir: DEFAULT_SESSIONS_DIR,
-    dbPath: DEFAULT_DB_PATH,
-  }));
+  writeFileSync(
+    configPath,
+    buildConfigFile({
+      token,
+      triggerName,
+      workingDir,
+      channelPolicy,
+      sessionsDir: DEFAULT_SESSIONS_DIR,
+      dbPath: DEFAULT_DB_PATH,
+    }),
+  );
 
   clack.log.success(`Config written to: ${configPath}`);
 
@@ -140,7 +157,10 @@ export async function runSetup(args: string[]): Promise<void> {
       message: `Install as a background service (${serviceName}) and start now?`,
       initialValue: true,
     });
-    if (clack.isCancel(installDaemon)) { clack.cancel('Setup cancelled.'); process.exit(0); }
+    if (clack.isCancel(installDaemon)) {
+      clack.cancel('Setup cancelled.');
+      process.exit(0);
+    }
 
     if (installDaemon) {
       const s = clack.spinner();
@@ -155,7 +175,9 @@ export async function runSetup(args: string[]): Promise<void> {
       } catch (err) {
         s.stop('Service installation failed.');
         clack.log.error(errorMessage(err));
-        clack.log.info('You can install manually later: piscord daemon install && piscord daemon start');
+        clack.log.info(
+          'You can install manually later: piscord daemon install && piscord daemon start',
+        );
       }
     }
   }
@@ -249,12 +271,18 @@ export function buildConfigFile(options: {
 
 function readCommandOutput(command: string): string | undefined {
   try {
-    const stdout = execSync(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const stdout = execSync(command, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
     if (stdout) return stdout;
   } catch {}
   // Some commands (e.g. pi --version) output to stderr — retry with merge
   try {
-    return execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || undefined;
+    return (
+      execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() ||
+      undefined
+    );
   } catch {
     return undefined;
   }

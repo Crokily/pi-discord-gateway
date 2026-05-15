@@ -59,11 +59,11 @@ The gateway **does not embed or replace `pi`**. It finds and runs your installed
 
 During setup you pick one of three policies. This controls how the bot interacts with server channels:
 
-| Policy | Behavior |
-|--------|----------|
-| `open` | All guild channels auto-register on first message. No @mention needed. |
-| `open-trigger` | All guild channels auto-register, but only respond when @mentioned. |
-| `allowlist` | Only manually registered channels are active. |
+| Policy         | Behavior                                                               |
+| -------------- | ---------------------------------------------------------------------- |
+| `open`         | All guild channels auto-register on first message. No @mention needed. |
+| `open-trigger` | All guild channels auto-register, but only respond when @mentioned.    |
+| `allowlist`    | Only manually registered channels are active.                          |
 
 - DMs always auto-register when `AUTO_REGISTER_DMS=true` (the default).
 - Use `EXCLUDED_CHANNELS` to block specific channels from auto-registration in `open` / `open-trigger` mode.
@@ -81,14 +81,14 @@ Re-running `piscord register` with `--cwd` updates that channel's working direct
 
 The gateway registers a global `/pi` command on Discord:
 
-| Subcommand | Description |
-|------------|-------------|
-| `/pi status` | Show model, thinking, working directory, session info, token usage |
-| `/pi model` | Set the channel's model (autocomplete from pi's available models) |
-| `/pi reset-model` | Clear the channel's model override |
-| `/pi thinking` | Set thinking level: off / minimal / low / medium / high / xhigh |
-| `/pi new` | Start a fresh session for this channel |
-| `/pi stop` | Abort the current task and clear queued messages |
+| Subcommand        | Description                                                        |
+| ----------------- | ------------------------------------------------------------------ |
+| `/pi status`      | Show model, thinking, working directory, session info, token usage |
+| `/pi model`       | Set the channel's model (autocomplete from pi's available models)  |
+| `/pi reset-model` | Clear the channel's model override                                 |
+| `/pi thinking`    | Set thinking level: off / minimal / low / medium / high / xhigh    |
+| `/pi new`         | Start a fresh session for this channel                             |
+| `/pi stop`        | Abort the current task and clear queued messages                   |
 
 ## Tools for Pi
 
@@ -96,9 +96,9 @@ The gateway exposes two capabilities through its CLI that **pi itself can invoke
 
 For example, you can say to pi:
 
-> *"Create a daily task at 9am UTC that generates a summary report"*
-> *"Send me report.pdf with a message saying here you go"*
-> *"Set a one-time reminder for the 2pm meeting today"*
+> _"Create a daily task at 9am UTC that generates a summary report"_
+> _"Send me report.pdf with a message saying here you go"_
+> _"Set a one-time reminder for the 2pm meeting today"_
 
 pi will run the appropriate `piscord task` or `piscord send` command behind the scenes.
 
@@ -165,6 +165,7 @@ piscord daemon uninstall # Remove the service
 ```
 
 > **Headless servers**: enable user lingering so the service runs without an active login session:
+>
 > ```bash
 > sudo loginctl enable-linger $USER
 > ```
@@ -175,28 +176,28 @@ Config file: `~/.config/pi-discord-gateway/config.env`
 
 Most users won't need to edit this file directly — `piscord setup` generates it for you. If you do want to tweak advanced settings, you can edit the file manually, or ask your pi to configure it for you.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DISCORD_BOT_TOKEN` | *(required)* | Discord bot token |
-| `PI_BIN` | `pi` | Path to pi binary |
-| `PI_MODEL` | *(none)* | Default model override |
-| `PI_THINKING` | *(none)* | Default thinking level |
-| `PI_CWD` | `$HOME` | Default working directory for pi; can be overridden per registered channel |
-| `PI_EXTRA_FLAGS` | *(none)* | Extra flags passed to pi |
-| `TRIGGER_NAME` | `pi` | Bot trigger name for @mentions |
-| `CHANNEL_POLICY` | `open` | Channel access: `open`, `open-trigger`, or `allowlist` |
-| `EXCLUDED_CHANNELS` | *(none)* | Comma-separated channel IDs to exclude from auto-registration |
-| `MAX_CONCURRENCY` | `3` | Max parallel pi invocations |
-| `MAX_SCHEDULED_CONCURRENCY` | `1` | Max scheduled tasks enqueued per tick |
-| `POLL_INTERVAL_MS` | `1000` | Queue poll interval (ms) |
-| `SHUTDOWN_TIMEOUT_MS` | `15000` | Graceful shutdown timeout (ms) |
-| `AUTO_REGISTER_DMS` | `true` | Auto-register DM channels |
-| `ARCHIVE_RETENTION_DAYS` | `30` | Days to keep archived sessions (0 = never clean) |
-| `MAX_ATTACHMENT_BYTES` | `26214400` | Max size per attachment (0 = no limit) |
-| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800` | Max combined attachment size (0 = no limit) |
-| `SESSIONS_DIR` | `~/.local/share/piscord-gateway/sessions` | Session storage directory |
-| `DB_PATH` | `~/.local/share/piscord-gateway/gateway.db` | SQLite database path |
-| `LOG_LEVEL` | `info` | Log level: debug/info/warn/error |
+| Variable                     | Default                                     | Description                                                                |
+| ---------------------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`          | _(required)_                                | Discord bot token                                                          |
+| `PI_BIN`                     | `pi`                                        | Path to pi binary                                                          |
+| `PI_MODEL`                   | _(none)_                                    | Default model override                                                     |
+| `PI_THINKING`                | _(none)_                                    | Default thinking level                                                     |
+| `PI_CWD`                     | `$HOME`                                     | Default working directory for pi; can be overridden per registered channel |
+| `PI_EXTRA_FLAGS`             | _(none)_                                    | Extra flags passed to pi                                                   |
+| `TRIGGER_NAME`               | `pi`                                        | Bot trigger name for @mentions                                             |
+| `CHANNEL_POLICY`             | `open`                                      | Channel access: `open`, `open-trigger`, or `allowlist`                     |
+| `EXCLUDED_CHANNELS`          | _(none)_                                    | Comma-separated channel IDs to exclude from auto-registration              |
+| `MAX_CONCURRENCY`            | `3`                                         | Max parallel pi invocations                                                |
+| `MAX_SCHEDULED_CONCURRENCY`  | `1`                                         | Max scheduled tasks enqueued per tick                                      |
+| `POLL_INTERVAL_MS`           | `1000`                                      | Queue poll interval (ms)                                                   |
+| `SHUTDOWN_TIMEOUT_MS`        | `15000`                                     | Graceful shutdown timeout (ms)                                             |
+| `AUTO_REGISTER_DMS`          | `true`                                      | Auto-register DM channels                                                  |
+| `ARCHIVE_RETENTION_DAYS`     | `30`                                        | Days to keep archived sessions (0 = never clean)                           |
+| `MAX_ATTACHMENT_BYTES`       | `26214400`                                  | Max size per attachment (0 = no limit)                                     |
+| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800`                                  | Max combined attachment size (0 = no limit)                                |
+| `SESSIONS_DIR`               | `~/.local/share/piscord-gateway/sessions`   | Session storage directory                                                  |
+| `DB_PATH`                    | `~/.local/share/piscord-gateway/gateway.db` | SQLite database path                                                       |
+| `LOG_LEVEL`                  | `info`                                      | Log level: debug/info/warn/error                                           |
 
 After changing config, restart the service: `piscord daemon stop && piscord daemon start`
 
@@ -226,21 +227,21 @@ piscord help                                  Show help
 
 ### Register options
 
-| Flag | Effect |
-|------|--------|
-| `--no-trigger` | Respond to all messages (not just @mentions) |
-| `--main` | Mark as main channel (implies `--no-trigger`) |
-| `--folder <name>` | Custom session folder name |
-| `--cwd <path>` | Override `PI_CWD` for this channel only |
+| Flag              | Effect                                        |
+| ----------------- | --------------------------------------------- |
+| `--no-trigger`    | Respond to all messages (not just @mentions)  |
+| `--main`          | Mark as main channel (implies `--no-trigger`) |
+| `--folder <name>` | Custom session folder name                    |
+| `--cwd <path>`    | Override `PI_CWD` for this channel only       |
 
 ## Data Locations
 
-| Item | Default path |
-|------|-------------|
-| Config | `~/.config/pi-discord-gateway/config.env` |
+| Item     | Default path                                |
+| -------- | ------------------------------------------- |
+| Config   | `~/.config/pi-discord-gateway/config.env`   |
 | Database | `~/.local/share/piscord-gateway/gateway.db` |
-| Sessions | `~/.local/share/piscord-gateway/sessions/` |
-| pi auth | `~/.pi/agent/auth.json` |
+| Sessions | `~/.local/share/piscord-gateway/sessions/`  |
+| pi auth  | `~/.pi/agent/auth.json`                     |
 
 ## Alternative Installation
 
@@ -319,15 +320,15 @@ MIT
 
 ## Version History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.4.2 | 2026-04-06 | Fixed default XDG data directory mismatch |
-| 1.4.1 | 2026-04-06 | Fixed text-only sends via piscord send |
-| 1.4.0 | 2026-04-06 | Added per-channel working directories |
-| 1.3.0 | 2026-04-04 | Improved setup UX, faster install |
-| 1.2.0 | 2026-04-04 | Added channel policy, abort, scheduler, send-file |
-| 1.1.0 | 2026-03-31 | Renamed package to piscord |
-| 1.0.0 | 2026-03-28 | Initial release |
+| Version | Date       | Changes                                           |
+| ------- | ---------- | ------------------------------------------------- |
+| 1.4.2   | 2026-04-06 | Fixed default XDG data directory mismatch         |
+| 1.4.1   | 2026-04-06 | Fixed text-only sends via piscord send            |
+| 1.4.0   | 2026-04-06 | Added per-channel working directories             |
+| 1.3.0   | 2026-04-04 | Improved setup UX, faster install                 |
+| 1.2.0   | 2026-04-04 | Added channel policy, abort, scheduler, send-file |
+| 1.1.0   | 2026-03-31 | Renamed package to piscord                        |
+| 1.0.0   | 2026-03-28 | Initial release                                   |
 
 See [Changelog](./CHANGELOG.md) for full details.
 

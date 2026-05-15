@@ -36,6 +36,10 @@
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "start": "node dist/cli/index.js start",
     "dev": "tsx src/cli/index.ts start"
   },
@@ -55,10 +59,15 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.59.3",
     "vitest": "^4.1.2"
   }
 }

@@ -9,7 +9,9 @@ describe('supportsModelXhigh', () => {
     const getSupportedThinkingLevels = vi.fn(() => ['low', 'xhigh'] as const);
     const legacySupportsXhigh = vi.fn(() => false);
 
-    expect(supportsModelXhigh(model, { getSupportedThinkingLevels, supportsXhigh: legacySupportsXhigh })).toBe(true);
+    expect(
+      supportsModelXhigh(model, { getSupportedThinkingLevels, supportsXhigh: legacySupportsXhigh }),
+    ).toBe(true);
     expect(getSupportedThinkingLevels).toHaveBeenCalledWith(model);
     expect(legacySupportsXhigh).not.toHaveBeenCalled();
   });

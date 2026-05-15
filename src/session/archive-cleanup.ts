@@ -61,7 +61,7 @@ export function cleanupArchivedSessions(
     return { deleted: [], skipped: 0 };
   }
 
-  const cutoff = Date.now() - (retentionDays * DAY_MS);
+  const cutoff = Date.now() - retentionDays * DAY_MS;
   const deleted: string[] = [];
   let skipped = 0;
 
@@ -73,14 +73,20 @@ export function cleanupArchivedSessions(
 
     if (options.dryRun) {
       deleted.push(archived.path);
-      logger.info({ path: archived.path, archivedAt: archived.archivedAt.toISOString() }, 'Archived session cleanup dry run');
+      logger.info(
+        { path: archived.path, archivedAt: archived.archivedAt.toISOString() },
+        'Archived session cleanup dry run',
+      );
       continue;
     }
 
     try {
       rmSync(archived.path, { recursive: true, force: true });
       deleted.push(archived.path);
-      logger.info({ path: archived.path, archivedAt: archived.archivedAt.toISOString() }, 'Deleted archived session');
+      logger.info(
+        { path: archived.path, archivedAt: archived.archivedAt.toISOString() },
+        'Deleted archived session',
+      );
     } catch (err: any) {
       skipped += 1;
       logger.warn({ err: err.message, path: archived.path }, 'Failed to delete archived session');

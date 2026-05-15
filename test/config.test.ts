@@ -59,7 +59,9 @@ describe('resolveConfigPath', () => {
 
     const { resolveConfigPath } = await loadConfigModule();
 
-    expect(resolveConfigPath().endsWith(join('.config', 'pi-discord-gateway', 'config.env'))).toBe(true);
+    expect(resolveConfigPath().endsWith(join('.config', 'pi-discord-gateway', 'config.env'))).toBe(
+      true,
+    );
   });
 });
 

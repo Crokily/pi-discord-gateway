@@ -13,11 +13,7 @@ function attachment(name: string, size: number): AttachmentMeta {
 describe('selectAttachmentsWithinLimits', () => {
   it('rejects files that exceed the per-file size limit', () => {
     const result = selectAttachmentsWithinLimits(
-      [
-        attachment('small.txt', 128),
-        attachment('large.txt', 512),
-        attachment('medium.txt', 256),
-      ],
+      [attachment('small.txt', 128), attachment('large.txt', 512), attachment('medium.txt', 256)],
       { maxFileBytes: 300, maxTotalBytes: 10_000 },
     );
 
@@ -34,11 +30,7 @@ describe('selectAttachmentsWithinLimits', () => {
 
   it('rejects files that would exceed the total attachment limit while keeping valid later files', () => {
     const result = selectAttachmentsWithinLimits(
-      [
-        attachment('first.txt', 100),
-        attachment('second.txt', 120),
-        attachment('third.txt', 80),
-      ],
+      [attachment('first.txt', 100), attachment('second.txt', 120), attachment('third.txt', 80)],
       { maxFileBytes: 500, maxTotalBytes: 200 },
     );
 

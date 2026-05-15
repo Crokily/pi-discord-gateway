@@ -38,14 +38,20 @@ export function startScheduler(): () => void {
     try {
       enqueueDueTasks();
     } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, 'Scheduler tick failed');
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'Scheduler tick failed',
+      );
     }
   };
 
   tick();
   schedulerTimer = setInterval(tick, SCHEDULER_INTERVAL_MS);
 
-  logger.info({ intervalMs: SCHEDULER_INTERVAL_MS, maxPerTick: config.maxScheduledConcurrency }, 'Scheduler started');
+  logger.info(
+    { intervalMs: SCHEDULER_INTERVAL_MS, maxPerTick: config.maxScheduledConcurrency },
+    'Scheduler started',
+  );
 
   return stopScheduler;
 }

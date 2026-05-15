@@ -1,6 +1,6 @@
 /** Supported pi thinking levels */
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
-export type ThinkingLevel = typeof THINKING_LEVELS[number];
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 /** A registered channel the gateway will respond in */
 export interface RegisteredChannel {

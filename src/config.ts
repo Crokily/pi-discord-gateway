@@ -11,7 +11,10 @@ const CONFIG_SOURCE = buildConfigSource();
 function defaultConfigPath(): string {
   switch (process.platform) {
     case 'win32':
-      return resolve(process.env.APPDATA || resolve(homedir(), 'AppData/Roaming'), 'piscord-gateway/config.env');
+      return resolve(
+        process.env.APPDATA || resolve(homedir(), 'AppData/Roaming'),
+        'piscord-gateway/config.env',
+      );
     case 'darwin':
       return resolve(homedir(), 'Library/Application Support/piscord-gateway/config.env');
     default:
@@ -22,7 +25,10 @@ function defaultConfigPath(): string {
 export function defaultDataDir(): string {
   switch (process.platform) {
     case 'win32':
-      return resolve(process.env.LOCALAPPDATA || resolve(homedir(), 'AppData/Local'), 'piscord-gateway');
+      return resolve(
+        process.env.LOCALAPPDATA || resolve(homedir(), 'AppData/Local'),
+        'piscord-gateway',
+      );
     case 'darwin':
       return resolve(homedir(), 'Library/Application Support/piscord-gateway');
     default:
@@ -117,7 +123,7 @@ function envBool(key: string, fallback: boolean): boolean {
 }
 
 const VALID_CHANNEL_POLICIES = ['open', 'open-trigger', 'allowlist'] as const;
-type ChannelPolicy = typeof VALID_CHANNEL_POLICIES[number];
+type ChannelPolicy = (typeof VALID_CHANNEL_POLICIES)[number];
 
 function parseChannelPolicy(value: string): ChannelPolicy {
   if ((VALID_CHANNEL_POLICIES as readonly string[]).includes(value)) {
@@ -180,7 +186,10 @@ export const config = {
 
   /** Comma-separated channel IDs to exclude from auto-registration */
   excludedChannels: new Set(
-    env('EXCLUDED_CHANNELS').split(',').map((s) => s.trim()).filter(Boolean),
+    env('EXCLUDED_CHANNELS')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   ),
 
   /** Max size for a single Discord attachment in bytes (0 disables the limit) */

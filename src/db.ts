@@ -116,7 +116,8 @@ function normalizeTimestamp(timestamp: string | null): string | null {
 // ── Channel registration ──
 
 export function registerChannel(ch: RegisteredChannel): void {
-  db.prepare(`
+  db.prepare(
+    `
     insert into channels (jid, name, folder, requires_trigger, is_main, model_override, thinking_override, cwd_override)
     values (?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(jid) do update set
@@ -128,7 +129,8 @@ export function registerChannel(ch: RegisteredChannel): void {
         when excluded.cwd_override != '' then excluded.cwd_override
         else channels.cwd_override
       end
-  `).run(
+  `,
+  ).run(
     ch.jid,
     ch.name,
     ch.folder,
@@ -156,7 +158,11 @@ export function getAllChannels(): RegisteredChannel[] {
   return rows.map(rowToChannel);
 }
 
-export function createDmChannel(jid: string, userId: string, displayName: string): RegisteredChannel {
+export function createDmChannel(
+  jid: string,
+  userId: string,
+  displayName: string,
+): RegisteredChannel {
   return {
     jid,
     name: `DM:${displayName}`,
@@ -170,7 +176,9 @@ export function createDmChannel(jid: string, userId: string, displayName: string
 }
 
 export function setChannelModelOverride(jid: string, modelOverride: string): boolean {
-  const result = db.prepare('update channels set model_override = ? where jid = ?').run(modelOverride.trim(), jid);
+  const result = db
+    .prepare('update channels set model_override = ? where jid = ?')
+    .run(modelOverride.trim(), jid);
   return result.changes > 0;
 }
 
@@ -180,7 +188,9 @@ export function clearChannelModelOverride(jid: string): boolean {
 }
 
 export function setChannelThinkingOverride(jid: string, thinkingOverride: ThinkingLevel): boolean {
-  const result = db.prepare('update channels set thinking_override = ? where jid = ?').run(thinkingOverride, jid);
+  const result = db
+    .prepare('update channels set thinking_override = ? where jid = ?')
+    .run(thinkingOverride, jid);
   return result.changes > 0;
 }
 
@@ -212,14 +222,25 @@ export function enqueueMessage(msg: {
   timestamp: string;
   attachments?: string | null;
 }): void {
-  db.prepare(`
+  db.prepare(
+    `
     insert into message_queue (channel_jid, sender, sender_name, content, timestamp, attachments)
     values (?, ?, ?, ?, ?, ?)
-  `).run(msg.channelJid, msg.sender, msg.senderName, msg.content, msg.timestamp, msg.attachments ?? null);
+  `,
+  ).run(
+    msg.channelJid,
+    msg.sender,
+    msg.senderName,
+    msg.content,
+    msg.timestamp,
+    msg.attachments ?? null,
+  );
 }
 
 export function claimNextMessage(channelJid: string): QueuedMessage | undefined {
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     with next_message as (
       select rowid
       from message_queue
@@ -232,38 +253,52 @@ export function claimNextMessage(channelJid: string): QueuedMessage | undefined 
     where rowid = (select rowid from next_message)
       and status = 'pending'
     returning rowid, channel_jid, sender, sender_name, content, timestamp, status, attachments
-  `).get(channelJid) as QueuedMessage | undefined;
+  `,
+    )
+    .get(channelJid) as QueuedMessage | undefined;
 
   return row;
 }
 
 export function markMessageDone(rowid: number): void {
-  db.prepare("update message_queue set status = 'done', processed_at = datetime('now') where rowid = ?").run(rowid);
+  db.prepare(
+    "update message_queue set status = 'done', processed_at = datetime('now') where rowid = ?",
+  ).run(rowid);
 }
 
 export function markMessageFailed(rowid: number): void {
-  db.prepare("update message_queue set status = 'failed', processed_at = datetime('now') where rowid = ?").run(rowid);
+  db.prepare(
+    "update message_queue set status = 'failed', processed_at = datetime('now') where rowid = ?",
+  ).run(rowid);
 }
 
 export function clearPendingMessages(channelJid: string): number {
-  const result = db.prepare("delete from message_queue where channel_jid = ? and status = 'pending'").run(channelJid);
+  const result = db
+    .prepare("delete from message_queue where channel_jid = ? and status = 'pending'")
+    .run(channelJid);
   return result.changes;
 }
 
 export function recoverStuckMessages(): number {
-  const result = db.prepare("update message_queue set status = 'pending' where status = 'processing'").run();
+  const result = db
+    .prepare("update message_queue set status = 'pending' where status = 'processing'")
+    .run();
   return result.changes;
 }
 
 /** Get channels that have pending messages */
 export function channelsWithPending(): string[] {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     select channel_jid
     from message_queue
     where status = 'pending'
     group by channel_jid
     order by min(rowid) asc
-  `).all() as any[];
+  `,
+    )
+    .all() as any[];
   return rows.map((r) => r.channel_jid);
 }
 
@@ -278,18 +313,22 @@ export function addScheduledTask(task: {
   createdBy?: string;
   nextRunAt: string;
 }): number {
-  const result = db.prepare(`
+  const result = db
+    .prepare(
+      `
     insert into scheduled_tasks (name, type, schedule, channel_jid, prompt, created_by, next_run_at)
     values (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    task.name,
-    task.type,
-    task.schedule,
-    task.channelJid,
-    task.prompt,
-    task.createdBy ?? '',
-    normalizeTimestamp(task.nextRunAt),
-  );
+  `,
+    )
+    .run(
+      task.name,
+      task.type,
+      task.schedule,
+      task.channelJid,
+      task.prompt,
+      task.createdBy ?? '',
+      normalizeTimestamp(task.nextRunAt),
+    );
 
   return Number(result.lastInsertRowid);
 }
@@ -310,37 +349,53 @@ export function disableScheduledTask(id: number): boolean {
 }
 
 export function listScheduledTasks(): ScheduledTaskRow[] {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     select id, name, type, schedule, channel_jid, prompt, enabled, last_run_at, next_run_at, created_at, created_by
     from scheduled_tasks
     order by id asc
-  `).all() as ScheduledTaskRow[];
+  `,
+    )
+    .all() as ScheduledTaskRow[];
 }
 
 export function getDueScheduledTasks(): ScheduledTaskRow[] {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     select id, name, type, schedule, channel_jid, prompt, enabled, last_run_at, next_run_at, created_at, created_by
     from scheduled_tasks
     where enabled = 1
       and next_run_at is not null
       and next_run_at <= datetime('now')
     order by next_run_at asc, id asc
-  `).all() as ScheduledTaskRow[];
+  `,
+    )
+    .all() as ScheduledTaskRow[];
 }
 
 export function updateTaskAfterRun(id: number, lastRunAt: string, nextRunAt: string | null): void {
-  db.prepare(`
+  db.prepare(
+    `
     update scheduled_tasks
     set last_run_at = ?,
         next_run_at = ?,
         enabled = case when ? is null then 0 else enabled end
     where id = ?
-  `).run(normalizeTimestamp(lastRunAt), normalizeTimestamp(nextRunAt), nextRunAt, id);
+  `,
+  ).run(normalizeTimestamp(lastRunAt), normalizeTimestamp(nextRunAt), nextRunAt, id);
 }
 
 export function enqueueScheduledTask(
   taskId: number,
-  msg: { channelJid: string; sender: string; senderName: string; content: string; timestamp: string },
+  msg: {
+    channelJid: string;
+    sender: string;
+    senderName: string;
+    content: string;
+    timestamp: string;
+  },
   lastRunAt: string,
   nextRunAt: string | null,
 ): void {
@@ -353,7 +408,11 @@ export function enqueueScheduledTask(
 // ── Message log ──
 
 export function logMessage(channelJid: string, role: string, content: string): void {
-  db.prepare('insert into message_log (channel_jid, role, content) values (?, ?, ?)').run(channelJid, role, content);
+  db.prepare('insert into message_log (channel_jid, role, content) values (?, ?, ?)').run(
+    channelJid,
+    role,
+    content,
+  );
 }
 
 export function closeDb(): void {

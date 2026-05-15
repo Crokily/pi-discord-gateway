@@ -44,10 +44,14 @@ describe('channel cwd migration', () => {
         created_at        text not null default (datetime('now'))
       );
     `);
-    legacyDb.prepare(`
+    legacyDb
+      .prepare(
+        `
       insert into channels (jid, name, folder, requires_trigger, is_main, model_override, thinking_override)
       values (?, ?, ?, ?, ?, ?, ?)
-    `).run('dc:123', 'legacy', 'ch_123', 1, 0, '', '');
+    `,
+      )
+      .run('dc:123', 'legacy', 'ch_123', 1, 0, '', '');
     legacyDb.close();
 
     process.env.DB_PATH = dbPath;
@@ -95,7 +99,9 @@ describe('channel cwd migration', () => {
 
     const migratedDb = new Database(dbPath, { readonly: true });
     try {
-      const columns = migratedDb.prepare('pragma table_info(channels)').all() as Array<{ name: string }>;
+      const columns = migratedDb.prepare('pragma table_info(channels)').all() as Array<{
+        name: string;
+      }>;
       expect(columns.some((column) => column.name === 'cwd_override')).toBe(true);
     } finally {
       migratedDb.close();

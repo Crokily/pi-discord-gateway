@@ -35,7 +35,8 @@ export function listAvailableModels(options?: { forceRefresh?: boolean }): Avail
   const registry = createModelRegistry(authStorage);
   registry.refresh();
 
-  const models = registry.getAvailable()
+  const models = registry
+    .getAvailable()
     .map(toAvailableModelInfo)
     .sort((a, b) => a.ref.localeCompare(b.ref));
 
@@ -43,7 +44,10 @@ export function listAvailableModels(options?: { forceRefresh?: boolean }): Avail
   return models;
 }
 
-export function resolveModelReference(ref: string, models = listAvailableModels()): AvailableModelInfo | undefined {
+export function resolveModelReference(
+  ref: string,
+  models = listAvailableModels(),
+): AvailableModelInfo | undefined {
   const raw = ref.trim();
   if (!raw) return undefined;
 
@@ -60,7 +64,10 @@ export function resolveModelReference(ref: string, models = listAvailableModels(
 
   // 3) Exact normalized match (handles 4.6 vs 4-6)
   match = models.find(
-    (m) => normalize(m.ref) === normalized || normalize(m.id) === normalized || normalize(m.name) === normalized,
+    (m) =>
+      normalize(m.ref) === normalized ||
+      normalize(m.id) === normalized ||
+      normalize(m.name) === normalized,
   );
   if (match) return match;
 
@@ -75,7 +82,9 @@ export function resolveModelReference(ref: string, models = listAvailableModels(
   if (partialMatches.length === 0) return undefined;
 
   // Prefer exact startsWith on canonical ref, otherwise the first sorted match.
-  partialMatches.sort((a, b) => scoreModelMatch(b, raw) - scoreModelMatch(a, raw) || a.ref.localeCompare(b.ref));
+  partialMatches.sort(
+    (a, b) => scoreModelMatch(b, raw) - scoreModelMatch(a, raw) || a.ref.localeCompare(b.ref),
+  );
   return partialMatches[0];
 }
 
@@ -94,7 +103,10 @@ export function autocompleteModels(query: string, limit = 25): AvailableModelInf
         normalize(m.id).includes(normalized) ||
         normalize(m.name).includes(normalized),
     )
-    .sort((a, b) => scoreModelMatch(b, trimmed) - scoreModelMatch(a, trimmed) || a.ref.localeCompare(b.ref))
+    .sort(
+      (a, b) =>
+        scoreModelMatch(b, trimmed) - scoreModelMatch(a, trimmed) || a.ref.localeCompare(b.ref),
+    )
     .slice(0, limit);
 }
 
@@ -109,7 +121,10 @@ export interface ThinkingResolution {
   reason?: 'non_reasoning' | 'xhigh_to_high';
 }
 
-export function resolveThinkingForModel(model: AvailableModelInfo | undefined, desired: ThinkingLevel): ThinkingResolution {
+export function resolveThinkingForModel(
+  model: AvailableModelInfo | undefined,
+  desired: ThinkingLevel,
+): ThinkingResolution {
   if (!model) {
     return { requested: desired, effective: desired, adjusted: false };
   }

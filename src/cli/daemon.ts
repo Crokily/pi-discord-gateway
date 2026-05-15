@@ -14,7 +14,9 @@ const isMac = () => process.platform === 'darwin';
 export function runDaemon(action: string): void {
   if (isLinux()) return runLinuxDaemon(action);
   if (isMac()) return runMacDaemon(action);
-  throw new Error(`Daemon management is not supported on ${process.platform}. Supported: linux, darwin.`);
+  throw new Error(
+    `Daemon management is not supported on ${process.platform}. Supported: linux, darwin.`,
+  );
 }
 
 // ─── Linux (systemd) ───
@@ -53,26 +55,29 @@ function linuxInstall(): void {
   const configPath = resolveConfigPath();
 
   mkdirSync(SYSTEMD_USER_DIR, { recursive: true });
-  writeFileSync(SYSTEMD_SERVICE_PATH, [
-    '[Unit]',
-    'Description=Pi Discord Gateway',
-    'After=network-online.target',
-    'Wants=network-online.target',
-    '',
-    '[Service]',
-    'Type=simple',
-    `WorkingDirectory=${homedir()}`,
-    `ExecStart=${nodePath} ${cliPath} start`,
-    'Restart=on-failure',
-    'RestartSec=10',
-    'StandardOutput=journal',
-    'StandardError=journal',
-    `Environment=PIDG_CONFIG=${configPath}`,
-    '',
-    '[Install]',
-    'WantedBy=default.target',
-    '',
-  ].join('\n'));
+  writeFileSync(
+    SYSTEMD_SERVICE_PATH,
+    [
+      '[Unit]',
+      'Description=Pi Discord Gateway',
+      'After=network-online.target',
+      'Wants=network-online.target',
+      '',
+      '[Service]',
+      'Type=simple',
+      `WorkingDirectory=${homedir()}`,
+      `ExecStart=${nodePath} ${cliPath} start`,
+      'Restart=on-failure',
+      'RestartSec=10',
+      'StandardOutput=journal',
+      'StandardError=journal',
+      `Environment=PIDG_CONFIG=${configPath}`,
+      '',
+      '[Install]',
+      'WantedBy=default.target',
+      '',
+    ].join('\n'),
+  );
 
   console.log(`Installed service file: ${SYSTEMD_SERVICE_PATH}`);
   run('systemctl', ['--user', 'daemon-reload']);
@@ -128,15 +133,18 @@ function macInstall(): void {
   mkdirSync(LAUNCH_AGENTS_DIR, { recursive: true });
   mkdirSync(DATA_DIR, { recursive: true });
 
-  writeFileSync(PLIST_PATH, buildPlist({
-    nodePath,
-    cliPath,
-    configPath,
-    workingDirectory: homedir(),
-    stdoutPath: STDOUT_LOG,
-    stderrPath: STDERR_LOG,
-    pathEnv: process.env.PATH ?? '',
-  }));
+  writeFileSync(
+    PLIST_PATH,
+    buildPlist({
+      nodePath,
+      cliPath,
+      configPath,
+      workingDirectory: homedir(),
+      stdoutPath: STDOUT_LOG,
+      stderrPath: STDERR_LOG,
+      pathEnv: process.env.PATH ?? '',
+    }),
+  );
 
   console.log(`Installed plist: ${PLIST_PATH}`);
   run('launchctl', ['bootstrap', `gui/${macUid()}`, PLIST_PATH]);
@@ -185,7 +193,8 @@ function buildPlist(options: {
   stderrPath: string;
   pathEnv: string;
 }): string {
-  const { nodePath, cliPath, configPath, workingDirectory, stdoutPath, stderrPath, pathEnv } = options;
+  const { nodePath, cliPath, configPath, workingDirectory, stdoutPath, stderrPath, pathEnv } =
+    options;
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   return [

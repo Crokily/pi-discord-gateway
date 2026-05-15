@@ -56,7 +56,10 @@ export async function downloadAttachments(
       const fileStats = await stat(filePath);
 
       results.push({ filePath, originalName: att.name || 'file', size: fileStats.size });
-      logger.debug({ name: att.name, size: fileStats.size, path: filePath }, 'Attachment downloaded');
+      logger.debug(
+        { name: att.name, size: fileStats.size, path: filePath },
+        'Attachment downloaded',
+      );
     } catch (err: any) {
       await rm(filePath, { force: true }).catch(() => undefined);
       logger.warn({ name: att.name, err: err.message }, 'Attachment download error');
@@ -89,23 +92,22 @@ async function streamAttachmentToFile(
     throw new Error('Attachment download returned an empty body');
   }
 
-  await pipeline(
-    Readable.fromWeb(res.body as any),
-    createWriteStream(filePath),
-    { signal },
-  );
+  await pipeline(Readable.fromWeb(res.body as any), createWriteStream(filePath), { signal });
 }
 
 /** Start the periodic media cleanup timer */
 export function startMediaCleanup(): () => void {
   // Run every 30 minutes
-  const timer = setInterval(() => {
-    try {
-      cleanupExpiredMedia();
-    } catch (err: any) {
-      logger.warn({ err: err.message }, 'Media cleanup error');
-    }
-  }, 30 * 60 * 1000);
+  const timer = setInterval(
+    () => {
+      try {
+        cleanupExpiredMedia();
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Media cleanup error');
+      }
+    },
+    30 * 60 * 1000,
+  );
 
   return () => clearInterval(timer);
 }

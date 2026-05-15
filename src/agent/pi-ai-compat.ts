@@ -8,7 +8,10 @@ type PiAiThinkingExports = {
 
 const piAiThinking = PiAI as unknown as PiAiThinkingExports;
 
-export function supportsModelXhigh(model: Model<any>, piAi: PiAiThinkingExports = piAiThinking): boolean {
+export function supportsModelXhigh(
+  model: Model<any>,
+  piAi: PiAiThinkingExports = piAiThinking,
+): boolean {
   if (typeof piAi.getSupportedThinkingLevels === 'function') {
     return piAi.getSupportedThinkingLevels(model).includes('xhigh');
   }

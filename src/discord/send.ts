@@ -39,7 +39,9 @@ export function validateSendRequest(
     }
 
     if (options.maxAttachmentBytes > 0 && file.size > options.maxAttachmentBytes) {
-      throw new Error(`File exceeds max attachment size (${options.maxAttachmentBytes} bytes): ${filePath}`);
+      throw new Error(
+        `File exceeds max attachment size (${options.maxAttachmentBytes} bytes): ${filePath}`,
+      );
     }
   }
 }
@@ -53,9 +55,10 @@ export async function sendFilesToDiscord(request: SendRequest): Promise<{ sentFi
   const channelJid = normalizeChannelJid(request.channelJid);
   const channelId = channelJid.slice(3);
   const attachments = await Promise.all(
-    request.files.map(async (filePath) => (
-      new AttachmentBuilder(await readFile(filePath), { name: basename(filePath) })
-    )),
+    request.files.map(
+      async (filePath) =>
+        new AttachmentBuilder(await readFile(filePath), { name: basename(filePath) }),
+    ),
   );
 
   const client = new Client({

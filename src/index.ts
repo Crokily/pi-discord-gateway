@@ -15,7 +15,9 @@ import { startScheduler } from './agent/scheduler.js';
  */
 export async function startGateway(): Promise<void> {
   if (!config.discordToken) {
-    throw new Error('DISCORD_BOT_TOKEN is required. Set it in config.env, .env, or the environment.');
+    throw new Error(
+      'DISCORD_BOT_TOKEN is required. Set it in config.env, .env, or the environment.',
+    );
   }
 
   initDb();
@@ -27,7 +29,9 @@ export async function startGateway(): Promise<void> {
   let shutdownPromise: Promise<void> | null = null;
 
   let resolveSignalWait!: () => void;
-  const signalWait = new Promise<void>((resolve) => { resolveSignalWait = resolve; });
+  const signalWait = new Promise<void>((resolve) => {
+    resolveSignalWait = resolve;
+  });
 
   const onSignal = (sig: NodeJS.Signals) => {
     void shutdown(`received ${sig}`).then(resolveSignalWait, resolveSignalWait);
@@ -81,13 +85,16 @@ export async function startGateway(): Promise<void> {
     stopArchiveCleanup = startArchiveCleanup();
     stopMediaCleanup = startMediaCleanup();
 
-    logger.info({
-      bot: getBotTag(),
-      trigger: `@${config.triggerName}`,
-      concurrency: config.maxConcurrency,
-      scheduledConcurrency: config.maxScheduledConcurrency,
-      sessionsDir: config.sessionsDir,
-    }, 'Gateway running');
+    logger.info(
+      {
+        bot: getBotTag(),
+        trigger: `@${config.triggerName}`,
+        concurrency: config.maxConcurrency,
+        scheduledConcurrency: config.maxScheduledConcurrency,
+        sessionsDir: config.sessionsDir,
+      },
+      'Gateway running',
+    );
 
     await signalWait;
   } catch (err) {

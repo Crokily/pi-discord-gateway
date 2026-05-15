@@ -43,7 +43,13 @@ export interface ChannelSessionStatus {
 export async function invokeAgent(
   channelFolder: string,
   userText: string,
-  opts?: { model?: string; thinking?: string; cwd?: string; signal?: AbortSignal; attachments?: string | null },
+  opts?: {
+    model?: string;
+    thinking?: string;
+    cwd?: string;
+    signal?: AbortSignal;
+    attachments?: string | null;
+  },
 ): Promise<AgentResult> {
   const sessionDir = resolveChannelSessionDir(channelFolder);
   mkdirSync(sessionDir, { recursive: true });
@@ -96,7 +102,10 @@ export async function invokeAgent(
 
   const { bin: effectiveBin, args: effectiveArgs } = resolvePiSpawn(config.piBin, args);
 
-  logger.debug({ bin: effectiveBin, args: effectiveArgs.slice(0, -1), channelFolder, cwd: effectiveCwd }, 'Spawning pi');
+  logger.debug(
+    { bin: effectiveBin, args: effectiveArgs.slice(0, -1), channelFolder, cwd: effectiveCwd },
+    'Spawning pi',
+  );
 
   return new Promise<AgentResult>((resolve, reject) => {
     const proc = spawn(effectiveBin, effectiveArgs, {
@@ -149,7 +158,10 @@ export async function invokeAgent(
   });
 }
 
-export async function getChannelSessionStatus(channelFolder: string, cwd = config.piCwd): Promise<ChannelSessionStatus> {
+export async function getChannelSessionStatus(
+  channelFolder: string,
+  cwd = config.piCwd,
+): Promise<ChannelSessionStatus> {
   const sessionFile = resolveLatestChannelSessionFile(channelFolder);
   if (!sessionFile) {
     return { statsSource: 'none' };
@@ -274,7 +286,10 @@ async function getSessionStatsViaRpc(
         if (line) {
           try {
             const message = JSON.parse(line) as RpcSessionStatsResponse | { type?: string };
-            if (message.type === 'response' && (message as RpcSessionStatsResponse).command === 'get_session_stats') {
+            if (
+              message.type === 'response' &&
+              (message as RpcSessionStatsResponse).command === 'get_session_stats'
+            ) {
               response = message as RpcSessionStatsResponse;
             }
           } catch {
@@ -293,7 +308,10 @@ async function getSessionStatsViaRpc(
       if (trailingLine) {
         try {
           const message = JSON.parse(trailingLine) as RpcSessionStatsResponse | { type?: string };
-          if (message.type === 'response' && (message as RpcSessionStatsResponse).command === 'get_session_stats') {
+          if (
+            message.type === 'response' &&
+            (message as RpcSessionStatsResponse).command === 'get_session_stats'
+          ) {
             response = message as RpcSessionStatsResponse;
           }
         } catch {
@@ -350,7 +368,8 @@ function readSessionTokensFromJsonl(sessionFile: string): SessionTokenUsage {
       totals.output += output;
       totals.cacheRead += cacheRead;
       totals.cacheWrite += cacheWrite;
-      totals.total += toNumber(entry.message.usage.totalTokens) || input + output + cacheRead + cacheWrite;
+      totals.total +=
+        toNumber(entry.message.usage.totalTokens) || input + output + cacheRead + cacheWrite;
     } catch {
       // Ignore incomplete or malformed trailing JSONL lines.
     }
@@ -365,7 +384,10 @@ function resolvePiSpawn(piBin: string, args: string[]): { bin: string; args: str
   }
 
   try {
-    const shimPath = execSync(`where ${piBin}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const shimPath = execSync(`where ${piBin}`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
       .split(/\r?\n/)
       .find((line) => line.trim().endsWith('.cmd'));
 

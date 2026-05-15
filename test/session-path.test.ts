@@ -11,8 +11,14 @@ describe('validateSessionFolder', () => {
   it('rejects empty, absolute, and dot-segment paths', () => {
     expect(() => validateSessionFolder('   ')).toThrow('Session folder cannot be empty');
     expect(() => validateSessionFolder('/tmp/channel')).toThrow('Session folder must be relative');
-    expect(() => validateSessionFolder('../channel')).toThrow('Session folder contains an invalid path segment');
-    expect(() => validateSessionFolder('guild/./channel')).toThrow('Session folder contains an invalid path segment');
-    expect(() => validateSessionFolder('guild/../channel')).toThrow('Session folder contains an invalid path segment');
+    expect(() => validateSessionFolder('../channel')).toThrow(
+      'Session folder contains an invalid path segment',
+    );
+    expect(() => validateSessionFolder('guild/./channel')).toThrow(
+      'Session folder contains an invalid path segment',
+    );
+    expect(() => validateSessionFolder('guild/../channel')).toThrow(
+      'Session folder contains an invalid path segment',
+    );
   });
 });

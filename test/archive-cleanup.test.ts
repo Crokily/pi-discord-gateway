@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanupArchivedSessions, listArchivedSessions, parseArchiveTimestamp } from '../src/session/archive-cleanup.js';
+import {
+  cleanupArchivedSessions,
+  listArchivedSessions,
+  parseArchiveTimestamp,
+} from '../src/session/archive-cleanup.js';
 
 const tempDirs: string[] = [];
 
@@ -14,8 +18,12 @@ afterEach(() => {
 
 describe('parseArchiveTimestamp', () => {
   it('parses archived directory names into UTC timestamps', () => {
-    expect(parseArchiveTimestamp('channel__archived_20240102T030405Z')?.toISOString()).toBe('2024-01-02T03:04:05.000Z');
-    expect(parseArchiveTimestamp('channel__archived_20240102T030405Z_2')?.toISOString()).toBe('2024-01-02T03:04:05.000Z');
+    expect(parseArchiveTimestamp('channel__archived_20240102T030405Z')?.toISOString()).toBe(
+      '2024-01-02T03:04:05.000Z',
+    );
+    expect(parseArchiveTimestamp('channel__archived_20240102T030405Z_2')?.toISOString()).toBe(
+      '2024-01-02T03:04:05.000Z',
+    );
   });
 
   it('returns undefined for invalid archived directory names', () => {
@@ -37,7 +45,10 @@ describe('cleanupArchivedSessions', () => {
 
     expect(result.deleted).toEqual([oldArchive]);
     expect(result.skipped).toBe(1);
-    expect(listArchivedSessions(root).map((entry) => entry.path)).toEqual([oldArchive, recentArchive]);
+    expect(listArchivedSessions(root).map((entry) => entry.path)).toEqual([
+      oldArchive,
+      recentArchive,
+    ]);
   });
 });
 
