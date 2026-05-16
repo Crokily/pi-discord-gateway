@@ -2,6 +2,8 @@
   <img src="https://img.coly.cc/obs-img/2025/10/a3a76006fd9279cc3559b6854f9335fc.png" width="600" alt="piscord">
 </p>
 
+<h1 align="center">Piscord</h1>
+
 <p align="center">
   <a href="https://www.npmjs.com/package/piscord"><img src="https://img.shields.io/npm/v/piscord" alt="npm version"></a>
   <img src="https://img.shields.io/npm/l/piscord" alt="license">
