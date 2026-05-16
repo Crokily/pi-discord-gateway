@@ -197,6 +197,22 @@ export const config = {
 
   /** Max combined attachment size per Discord message in bytes (0 disables the limit) */
   maxTotalAttachmentBytes: envInt('MAX_TOTAL_ATTACHMENT_BYTES', 50 * 1024 * 1024, { min: 0 }),
+
+  /**
+   * When true, the first @-mention in a registered parent text channel
+   * spawns a Discord thread on that message; subsequent replies are
+   * routed into the thread.  The thread inherits its parent's workspace
+   * (cwd), model, and thinking overrides; it gets its own session-dir so
+   * each thread is an isolated Pi conversation history.
+   */
+  autoThread: envBool('AUTO_THREAD', false),
+
+  /**
+   * Thread auto-archive duration in minutes.  Discord accepts 60, 1440,
+   * 4320, or 10080 — values outside that set may be downgraded by the
+   * server to the closest allowed option.
+   */
+  autoThreadArchiveMinutes: envInt('AUTO_THREAD_ARCHIVE_MIN', 1440, { min: 1 }),
 } as const;
 
 export type Config = typeof config;

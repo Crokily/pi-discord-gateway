@@ -15,6 +15,7 @@ import {
   type Message,
   type TextChannel,
   type DMChannel,
+  type ThreadAutoArchiveDuration,
 } from 'discord.js';
 import { type RegisteredChannel } from '../types.js';
 import { config } from '../config.js';
@@ -230,16 +231,64 @@ async function handleMessage(message: Message): Promise<void> {
   }
   if (!content) return;
 
+  // ── Auto-thread ──
+  // When AUTO_THREAD is enabled and the message arrived in a registered
+  // parent text channel (not already inside a thread, not a DM), create a
+  // Discord thread on the user message and register it under the same
+  // workspace/model/cwd as the parent.  Subsequent replies in the thread
+  // are matched directly by their thread jid.  Each thread gets its own
+  // session-dir, so threads are isolated Pi conversations that share the
+  // parent's persistent workspace files.
+  try {
+    const isAlreadyInThread =
+      typeof message.channel.isThread === 'function' && message.channel.isThread();
+    if (config.autoThread && !isDM && !isAlreadyInThread && 'startThread' in message) {
+      const threadName =
+        (content || senderName || 'conversation')
+          .slice(0, 80)
+          .replace(/\s+/g, ' ')
+          .trim() || 'conversation';
+      const thread = await message.startThread({
+        name: threadName,
+        autoArchiveDuration: config.autoThreadArchiveMinutes as ThreadAutoArchiveDuration,
+      });
+      if (thread?.id) {
+        const threadJid = `dc:${thread.id}`;
+        const threadReg: RegisteredChannel = {
+          jid: threadJid,
+          name: `${channel.name} → ${threadName}`,
+          folder: `ch_${thread.id}`,
+          requiresTrigger: false,
+          isMain: false,
+          modelOverride: channel.modelOverride || '',
+          thinkingOverride: channel.thinkingOverride || '',
+          cwdOverride: channel.cwdOverride || '',
+        };
+        dbRegisterChannel(threadReg);
+        logger.info(
+          { parent: jid, thread: threadJid, name: threadName },
+          'Auto-created Discord thread',
+        );
+        channel = threadReg;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { jid, err: (err as Error)?.message },
+      'Auto-thread creation failed; falling back to parent channel',
+    );
+  }
+
   // ── Enqueue ──
   enqueueMessage({
-    channelJid: jid,
+    channelJid: channel.jid,
     sender,
     senderName,
     content,
     timestamp,
     attachments: attachmentsJson,
   });
-  logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
+  logger.info({ jid: channel.jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
 
 // ── Outbound ──
