@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { existsSync, realpathSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RegisteredChannel } from '../types.js';
@@ -23,7 +22,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     case 'start': {
       if (await maybeRunFirstTimeSetup()) return 0;
-      checkPiDependencies();
+      await checkPiDependencies();
       const { startGateway } = await import('../index.js');
       await startGateway();
       return 0;
@@ -431,19 +430,26 @@ async function reportError(command: string | undefined, err: unknown): Promise<v
   console.error(`Error: ${message}`);
 }
 
-function checkPiDependencies(): void {
-  const require = createRequire(import.meta.url);
-
+async function checkPiDependencies(): Promise<void> {
+  // Use dynamic import() rather than CJS require.resolve so this works
+  // when the peer (e.g. @earendil-works/pi-ai) is an ESM-only package
+  // whose package.json "exports" only declares the "import" condition.
+  // require.resolve cannot resolve such packages and produces a false
+  // negative even when they're installed.
   try {
-    require.resolve('@earendil-works/pi-ai');
+    await import('@earendil-works/pi-ai');
     return;
   } catch {
     // not found — check if the legacy package is installed instead
   }
 
   let hint = '';
+  // Use an indirect specifier so TypeScript doesn't statically resolve the
+  // legacy package (it may not be installed in this devDependencies set,
+  // and we only care whether it's present at runtime).
+  const legacyPkg = '@mariozechner/pi-ai';
   try {
-    require.resolve('@mariozechner/pi-ai');
+    await import(legacyPkg);
     hint =
       '\n\nDetected legacy @mariozechner/pi-ai. This package has moved to @earendil-works/pi-ai.' +
       '\nUpgrade pi to v0.74.0+ to get the new packages.';
