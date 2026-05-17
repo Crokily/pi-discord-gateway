@@ -54,14 +54,12 @@ describe('resolveConfigPath', () => {
     expect(resolveConfigPath()).toBe(resolve(homedir(), 'custom/pi-discord/config.env'));
   });
 
-  it('falls back to the XDG-style default config path', async () => {
+  it('falls back to the platform default config path', async () => {
     delete process.env.PIDG_CONFIG;
 
     const { resolveConfigPath } = await loadConfigModule();
 
-    expect(resolveConfigPath().endsWith(join('.config', 'pi-discord-gateway', 'config.env'))).toBe(
-      true,
-    );
+    expect(resolveConfigPath()).toBe(expectedDefaultConfigPath(homedir()));
   });
 });
 
@@ -100,7 +98,7 @@ describe('config loading', () => {
   it('uses the default config file before the cwd .env fallback', async () => {
     const homeDir = createTempDir();
     const workDir = createTempDir();
-    const defaultConfigPath = resolve(homeDir, '.config/pi-discord-gateway/config.env');
+    const defaultConfigPath = expectedDefaultConfigPath(homeDir);
 
     writeEnvFile(resolve(workDir, '.env'), {
       DB_PATH: '/legacy/gateway.db',
@@ -124,7 +122,7 @@ describe('config loading', () => {
     expect(config.sessionsDir).toBe('/default/sessions');
   });
 
-  it('uses the piscord XDG data directory defaults when storage paths are unset', async () => {
+  it('uses the piscord platform data directory defaults when storage paths are unset', async () => {
     const homeDir = createTempDir();
     const workDir = createTempDir();
 
@@ -136,8 +134,9 @@ describe('config loading', () => {
 
     const { config } = await loadConfigModule();
 
-    expect(config.dbPath).toBe(resolve(homeDir, '.local/share/piscord-gateway/gateway.db'));
-    expect(config.sessionsDir).toBe(resolve(homeDir, '.local/share/piscord-gateway/sessions'));
+    const dataDir = expectedDefaultDataDir(homeDir);
+    expect(config.dbPath).toBe(resolve(dataDir, 'gateway.db'));
+    expect(config.sessionsDir).toBe(resolve(dataDir, 'sessions'));
   });
 });
 
@@ -155,6 +154,34 @@ function writeEnvFile(filePath: string, values: Record<string, string>): void {
       .map(([key, value]) => `${key}=${value}`)
       .join('\n')}\n`,
   );
+}
+
+function expectedDefaultConfigPath(homeDir: string): string {
+  switch (process.platform) {
+    case 'win32':
+      return resolve(
+        process.env.APPDATA || resolve(homeDir, 'AppData/Roaming'),
+        'piscord-gateway/config.env',
+      );
+    case 'darwin':
+      return resolve(homeDir, 'Library/Application Support/piscord-gateway/config.env');
+    default:
+      return resolve(homeDir, '.config', 'pi-discord-gateway', 'config.env');
+  }
+}
+
+function expectedDefaultDataDir(homeDir: string): string {
+  switch (process.platform) {
+    case 'win32':
+      return resolve(
+        process.env.LOCALAPPDATA || resolve(homeDir, 'AppData/Local'),
+        'piscord-gateway',
+      );
+    case 'darwin':
+      return resolve(homeDir, 'Library/Application Support/piscord-gateway');
+    default:
+      return resolve(homeDir, '.local/share', 'piscord-gateway');
+  }
 }
 
 async function loadConfigModule() {
