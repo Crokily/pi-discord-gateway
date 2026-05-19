@@ -3,12 +3,17 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { sendFilesToDiscordMock } = vi.hoisted(() => ({
+const { sendFilesToDiscordMock, startGatewayMock } = vi.hoisted(() => ({
   sendFilesToDiscordMock: vi.fn(),
+  startGatewayMock: vi.fn(),
 }));
 
 vi.mock('../src/discord/send.js', () => ({
   sendFilesToDiscord: sendFilesToDiscordMock,
+}));
+
+vi.mock('../src/index.js', () => ({
+  startGateway: startGatewayMock,
 }));
 
 const originalEnv = { ...process.env };
@@ -47,6 +52,19 @@ describe('formatHelpText', () => {
     expect(help).toContain('piscord daemon install');
     expect(help).toContain('piscord send --channel <jid> [--text <message>] [--file <path> ...]');
     expect(help).toContain('--cwd <path>');
+  });
+});
+
+describe('start command', () => {
+  it('does not report ESM-only pi-ai as a missing peer dependency', async () => {
+    process.env.PIDG_CONFIG = resolve('package.json');
+    startGatewayMock.mockResolvedValue(undefined);
+
+    vi.resetModules();
+    const { main } = await import('../src/cli/index.js');
+
+    await expect(main(['start'])).resolves.toBe(0);
+    expect(startGatewayMock).toHaveBeenCalledOnce();
   });
 });
 

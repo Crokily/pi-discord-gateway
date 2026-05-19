@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { existsSync, realpathSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RegisteredChannel } from '../types.js';
@@ -432,26 +431,27 @@ async function reportError(command: string | undefined, err: unknown): Promise<v
 }
 
 function checkPiDependencies(): void {
-  const require = createRequire(import.meta.url);
-
-  try {
-    require.resolve('@earendil-works/pi-ai');
+  if (canResolveImport('@earendil-works/pi-ai')) {
     return;
-  } catch {
-    // not found — check if the legacy package is installed instead
   }
 
   let hint = '';
-  try {
-    require.resolve('@mariozechner/pi-ai');
+  if (canResolveImport('@mariozechner/pi-ai')) {
     hint =
       '\n\nDetected legacy @mariozechner/pi-ai. This package has moved to @earendil-works/pi-ai.' +
       '\nUpgrade pi to v0.74.0+ to get the new packages.';
-  } catch {
-    // neither installed
   }
 
   throw new Error(`Required peer dependency @earendil-works/pi-ai is not installed.${hint}`);
+}
+
+function canResolveImport(specifier: string): boolean {
+  try {
+    import.meta.resolve(specifier);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function maybeRunFirstTimeSetup(): Promise<boolean> {
