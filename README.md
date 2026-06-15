@@ -13,7 +13,7 @@
 
 A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). SQLite-backed queue, per-channel session isolation, crash recovery, abort support. One command to set up, runs as a daemon, never drops a message.
 
-**Current version: 1.5.3** (see [Changelog](./CHANGELOG.md) for details)
+**Latest release:** see the npm version badge above and [Changelog](./CHANGELOG.md) for details.
 
 ```bash
 npm install -g piscord
@@ -343,6 +343,7 @@ MIT
 
 | Version | Date       | Changes                                                     |
 | ------- | ---------- | ----------------------------------------------------------- |
+| 1.6.1   | 2026-06-15 | Fixed README version metadata                               |
 | 1.6.0   | 2026-06-15 | Path-based attachment relay and clearer empty-output errors |
 | 1.5.3   | 2026-05-19 | Fix ESM peer-dep check, cross-platform test fixes           |
 | 1.5.1   | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package      |

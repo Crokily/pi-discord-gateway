@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-06-15
+
+### Fixed
+
+- Remove stale hardcoded README current-version text so npm/GitHub documentation does not show an outdated release number.
+
 ## [1.6.0] - 2026-06-15
 
 ### Changed
