@@ -1,7 +1,8 @@
-import { AuthStorage, ModelRegistry, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { Model } from '@earendil-works/pi-ai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  __setCachedModelRuntimeForTests,
   isModelCatalogStale,
   listSelectableModels,
   parsePiModelList,
@@ -36,6 +37,13 @@ const models = [
   },
 ] as Model<any>[];
 
+// `ModelRegistry` is a thin facade that delegates `getAvailable()` to
+// `runtime.getAvailableSnapshot()`, so a runtime stub returning `models` is
+// enough to drive the SDK catalog path.
+const runtimeStub = {
+  getAvailableSnapshot: () => models,
+} as unknown as ModelRuntime;
+
 const defaultCliOutput = `provider  model  context  max-out  thinking  images
 other    gamma  128K     16K      yes       no
 test     alpha  128K     16K      no        no
@@ -43,21 +51,15 @@ test     beta   128K     16K      yes       no
 `;
 
 function mockPiCatalog(enabledModels?: string[], cliOutput = defaultCliOutput): void {
-  const authStorage = { reload: vi.fn() } as unknown as AuthStorage;
-  const registry = {
-    refresh: vi.fn(),
-    getAvailable: vi.fn(() => models),
-  } as unknown as ModelRegistry;
-
   spawnSyncMock.mockReturnValue({ status: 0, stdout: cliOutput, stderr: '' });
-  vi.spyOn(AuthStorage, 'create').mockReturnValue(authStorage);
-  vi.spyOn(ModelRegistry, 'create').mockReturnValue(registry);
   vi.spyOn(SettingsManager, 'create').mockReturnValue(SettingsManager.inMemory({ enabledModels }));
+  __setCachedModelRuntimeForTests(runtimeStub);
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
   spawnSyncMock.mockReset();
+  __setCachedModelRuntimeForTests(null);
 });
 
 describe('listSelectableModels', () => {
@@ -178,6 +180,63 @@ describe('isModelCatalogStale', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('ModelRuntime bootstrap', () => {
+  it('does not crash when the runtime is not ready yet (CLI catalog still serves)', async () => {
+    // No cached runtime -> createModelRegistry() returns the stub (empty SDK
+    // list). The CLI catalog must still produce models.
+    __setCachedModelRuntimeForTests(null);
+    spawnSyncMock.mockReturnValue({ status: 0, stdout: defaultCliOutput, stderr: '' });
+    vi.spyOn(SettingsManager, 'create').mockReturnValue(SettingsManager.inMemory({}));
+
+    const result = await listSelectableModels({ forceRefresh: true, cwd: '/tmp/no-runtime' });
+
+    expect(result.map((model) => model.ref)).toEqual([
+      'other/gamma',
+      'test/alpha',
+      'test/beta',
+    ]);
+  });
+
+  it('boots ModelRuntime.create() lazily and caches it for later reads', async () => {
+    __setCachedModelRuntimeForTests(null);
+    const freshRuntime = {
+      getAvailableSnapshot: () => models,
+    } as unknown as ModelRuntime;
+    const createSpy = vi.spyOn(ModelRuntime, 'create').mockResolvedValue(freshRuntime);
+    spawnSyncMock.mockReturnValue({ status: 0, stdout: defaultCliOutput, stderr: '' });
+    vi.spyOn(SettingsManager, 'create').mockReturnValue(SettingsManager.inMemory({}));
+
+    // First read triggers bootstrap; SDK models are unavailable this tick.
+    await listSelectableModels({ forceRefresh: true, cwd: '/tmp/bootstrap' });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+
+    // Let the resolved runtime (and its .then cache-population) settle.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Subsequent reads reuse the cached runtime without re-invoking create().
+    const second = await listSelectableModels({ forceRefresh: true, cwd: '/tmp/bootstrap' });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    // CLI catalog is still authoritative when present, so refs are unchanged;
+    // the point is that no exception is thrown and the runtime is reused.
+    expect(second.length).toBeGreaterThan(0);
+  });
+
+  it('survives a failing ModelRuntime.create() without throwing', async () => {
+    __setCachedModelRuntimeForTests(null);
+    vi.spyOn(ModelRuntime, 'create').mockRejectedValue(new Error('boom'));
+    spawnSyncMock.mockReturnValue({ status: 0, stdout: defaultCliOutput, stderr: '' });
+    vi.spyOn(SettingsManager, 'create').mockReturnValue(SettingsManager.inMemory({}));
+
+    const result = await listSelectableModels({ forceRefresh: true, cwd: '/tmp/failed-runtime' });
+
+    expect(result.map((model) => model.ref)).toEqual([
+      'other/gamma',
+      'test/alpha',
+      'test/beta',
+    ]);
   });
 });
 

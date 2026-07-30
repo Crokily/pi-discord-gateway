@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { AuthStorage, ModelRegistry, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { ModelRegistry, ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { Model } from '@earendil-works/pi-ai';
 import { minimatch } from 'minimatch';
 import { config } from '../config.js';
+import { logger } from '../logger.js';
 import { THINKING_LEVELS, type ThinkingLevel } from '../types.js';
 import { supportsModelXhigh } from './pi-ai-compat.js';
 import { resolvePiSpawn } from './pi-spawn.js';
@@ -290,11 +291,7 @@ function loadModelCatalog(forceRefresh: boolean, cwd: string, allowStale: boolea
     return cached;
   }
 
-  const authStorage = AuthStorage.create();
-  authStorage.reload();
-
-  const registry = createModelRegistry(authStorage);
-  registry.refresh();
+  const registry = createModelRegistry();
 
   const sdkModels = registry.getAvailable().map(toAvailableModelInfo);
   const cliModels = listModelsFromPiCli(config.piBin, cwd);
@@ -404,17 +401,61 @@ function mergeModelMetadata(
   });
 }
 
-function createModelRegistry(authStorage: AuthStorage): ModelRegistry {
-  const registryClass = ModelRegistry as unknown as {
-    create?: (authStorage: AuthStorage) => ModelRegistry;
-    new (authStorage: AuthStorage): ModelRegistry;
-  };
+interface ModelRegistryLike {
+  getAvailable(): Model<any>[];
+}
 
-  if (typeof registryClass.create === 'function') {
-    return registryClass.create(authStorage);
+const STUB_REGISTRY: ModelRegistryLike = {
+  getAvailable: () => [],
+};
+
+let cachedRuntime: ModelRuntime | null = null;
+let runtimeInitPromise: Promise<ModelRuntime | null> | null = null;
+
+/**
+ * Boot a {@link ModelRuntime} in the background.
+ *
+ * pi-coding-agent >=0.83 removed both the synchronous `ModelRegistry.create()`
+ * factory and the `AuthStorage` export. A runtime can now only be constructed
+ * via the async `ModelRuntime.create()`, but `loadModelCatalog` is synchronous,
+ * so we lazily kick off creation on first use and hand callers a stub registry
+ * (empty SDK model list) until it resolves. The CLI catalog
+ * (`pi --list-models`) remains the authoritative model source, so this only
+ * delays supplementary metadata (display names / xhigh capability flags).
+ */
+function ensureModelRuntime(): void {
+  if (runtimeInitPromise || cachedRuntime) {
+    return;
   }
+  runtimeInitPromise = ModelRuntime.create()
+    .then((runtime) => {
+      cachedRuntime = runtime;
+      // Invalidate the catalog cache so the next read picks up SDK metadata.
+      cacheByCwd.clear();
+      return runtime;
+    })
+    .catch((err) => {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'Failed to initialize pi ModelRuntime; SDK model metadata will be unavailable',
+      );
+      runtimeInitPromise = null;
+      return null;
+    });
+}
 
-  return new registryClass(authStorage);
+function createModelRegistry(): ModelRegistryLike {
+  if (cachedRuntime) {
+    return new ModelRegistry(cachedRuntime);
+  }
+  ensureModelRuntime();
+  return STUB_REGISTRY;
+}
+
+/** @internal Test-only hook to inject/reset the cached ModelRuntime. */
+export function __setCachedModelRuntimeForTests(runtime: ModelRuntime | null): void {
+  cachedRuntime = runtime;
+  runtimeInitPromise = null;
 }
 
 function toAvailableModelInfo(model: Model<any>): AvailableModelInfo {
