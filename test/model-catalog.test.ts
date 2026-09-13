@@ -1,183 +1,135 @@
-import { AuthStorage, ModelRegistry, SettingsManager } from '@earendil-works/pi-coding-agent';
-import type { Model } from '@earendil-works/pi-ai';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  isModelCatalogStale,
-  listSelectableModels,
+  ModelCatalog,
   parsePiModelList,
+  resolveEnabledModelScope,
+  type AvailableModelInfo,
 } from '../src/agent/model-catalog.js';
-import { config } from '../src/config.js';
-
-const { spawnSyncMock } = vi.hoisted(() => ({ spawnSyncMock: vi.fn() }));
-
-vi.mock('node:child_process', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:child_process')>()),
-  spawnSync: spawnSyncMock,
-}));
-
-const models = [
-  {
-    provider: 'test',
-    id: 'alpha',
-    name: 'Alpha',
-    reasoning: false,
-  },
-  {
-    provider: 'test',
-    id: 'beta',
-    name: 'Beta',
-    reasoning: true,
-  },
-  {
-    provider: 'other',
-    id: 'gamma',
-    name: 'Gamma',
-    reasoning: true,
-  },
-] as Model<any>[];
-
 const defaultCliOutput = `provider  model  context  max-out  thinking  images
 other    gamma  128K     16K      yes       no
 test     alpha  128K     16K      no        no
 test     beta   128K     16K      yes       no
 `;
-
-function mockPiCatalog(enabledModels?: string[], cliOutput = defaultCliOutput): void {
-  const authStorage = { reload: vi.fn() } as unknown as AuthStorage;
-  const registry = {
-    refresh: vi.fn(),
-    getAvailable: vi.fn(() => models),
-  } as unknown as ModelRegistry;
-
-  spawnSyncMock.mockReturnValue({ status: 0, stdout: cliOutput, stderr: '' });
-  vi.spyOn(AuthStorage, 'create').mockReturnValue(authStorage);
-  vi.spyOn(ModelRegistry, 'create').mockReturnValue(registry);
-  vi.spyOn(SettingsManager, 'create').mockReturnValue(SettingsManager.inMemory({ enabledModels }));
-}
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  spawnSyncMock.mockReset();
-});
-
-describe('listSelectableModels', () => {
-  it('returns every available model when enabledModels is not configured', async () => {
-    mockPiCatalog();
-
-    const result = await listSelectableModels({ forceRefresh: true, cwd: '/tmp/project' });
-
-    expect(result.map((model) => model.ref)).toEqual(['other/gamma', 'test/alpha', 'test/beta']);
-    expect(SettingsManager.create).toHaveBeenCalledWith('/tmp/project');
+const models = parsePiModelList(defaultCliOutput)!;
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
   });
+  return { promise, resolve };
+};
 
-  it('uses pi enabledModels semantics and preserves configured order', async () => {
-    mockPiCatalog(['other/gamma', 'test/alpha']);
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result.map((model) => model.ref)).toEqual(['other/gamma', 'test/alpha']);
-  });
-
-  it('supports the same glob patterns as pi scoped models', async () => {
-    mockPiCatalog(['test/*']);
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result.map((model) => model.ref)).toEqual(['test/alpha', 'test/beta']);
-  });
-
-  it('uses the configured pi binary as the authoritative model source', async () => {
-    mockPiCatalog(
-      ['test/delta'],
-      `${defaultCliOutput}test     delta  256K     32K      yes       yes\n`,
-    );
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result.map((model) => model.ref)).toEqual(['test/delta']);
-  });
-
-  it('falls back to the SDK catalog when pi --list-models fails', async () => {
-    mockPiCatalog(['test/beta']);
-    spawnSyncMock.mockReturnValue({ status: 1, stdout: '', stderr: 'failed' });
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result.map((model) => model.ref)).toEqual(['test/beta']);
-  });
-
-  it('keeps a successful empty pi catalog empty instead of falling back', async () => {
-    mockPiCatalog(undefined, 'provider  model  context  max-out  thinking  images\n');
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result).toEqual([]);
-  });
-
-  it('falls back to the SDK catalog when pi --list-models errors out', async () => {
-    mockPiCatalog(['test/beta']);
-    spawnSyncMock.mockReturnValue({
-      error: new Error('spawnSync pi ETIMEDOUT'),
-      status: null,
-      stdout: '',
-      stderr: '',
+describe('asynchronous model discovery', () => {
+  it('counts slow SDK probes against the warm-up concurrency limit after CLI results arrive', async () => {
+    const probes = [
+      deferred<AvailableModelInfo[]>(),
+      deferred<AvailableModelInfo[]>(),
+      deferred<AvailableModelInfo[]>(),
+    ];
+    let started = 0;
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: () => probes[started++].promise,
     });
-
-    const result = await listSelectableModels({ forceRefresh: true });
-
-    expect(result.map((model) => model.ref)).toEqual(['test/beta']);
+    const first = catalog.refresh('/one');
+    const second = catalog.refresh('/two');
+    const third = catalog.refresh('/three');
+    await Promise.all([first, second]);
+    expect(started).toBe(2);
+    probes[0].resolve(models);
+    await third;
+    expect(started).toBe(3);
+    probes[1].resolve(models);
+    probes[2].resolve(models);
+    await catalog.stop();
   });
-
-  it('bounds the pi --list-models subprocess with a timeout', async () => {
-    mockPiCatalog();
-
-    await listSelectableModels({ forceRefresh: true });
-
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({ timeout: expect.any(Number) }),
-    );
+  it('serves cold reads immediately and coalesces concurrent refreshes', async () => {
+    const pending = deferred<AvailableModelInfo[]>();
+    const cli = vi.fn(() => pending.promise);
+    const catalog = new ModelCatalog({
+      cli,
+      sdk: async (_cwd, _signal, settings) => {
+        settings([]);
+        return models;
+      },
+    });
+    expect(catalog.read('/a')).toEqual([]);
+    expect(cli).not.toHaveBeenCalled();
+    const first = catalog.refresh('/a');
+    const second = catalog.refresh('/a');
+    expect(first).toBe(second);
+    expect(catalog.read('/a')).toEqual([]);
+    pending.resolve(models);
+    await first;
+    expect(cli).toHaveBeenCalledTimes(1);
+    expect(catalog.read('/a')).toHaveLength(3);
   });
-
-  it('passes PI_EXTRA_FLAGS to model discovery like the agent invocation', async () => {
-    mockPiCatalog();
-    const mutableConfig = config as { piExtraFlags: string };
-    const previousFlags = mutableConfig.piExtraFlags;
-    mutableConfig.piExtraFlags = '-e ./provider.ts --approve';
-
-    try {
-      await listSelectableModels({ forceRefresh: true });
-    } finally {
-      mutableConfig.piExtraFlags = previousFlags;
-    }
-
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      expect.anything(),
-      ['--list-models', '-e', './provider.ts', '--approve'],
-      expect.anything(),
-    );
+  it('returns CLI models without waiting for SDK metadata and enriches them later', async () => {
+    const pending = deferred<AvailableModelInfo[]>();
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: (_cwd, _signal, settings) => {
+        settings([]);
+        return pending.promise;
+      },
+    });
+    await catalog.refresh('/a');
+    expect(catalog.read('/a')).toHaveLength(3);
+    pending.resolve([{ ...models[1], name: 'Alpha display name' }]);
+    await pending.promise;
+    expect(catalog.read('/a').find((m) => m.id === 'alpha')?.name).toBe('Alpha display name');
   });
-});
-
-describe('isModelCatalogStale', () => {
-  it('treats never-loaded catalogs as stale', () => {
-    expect(isModelCatalogStale('/tmp/never-loaded')).toBe(true);
+  it('waits for the real cold SDK fallback rather than caching an empty bootstrap', async () => {
+    const pending = deferred<AvailableModelInfo[]>();
+    const catalog = new ModelCatalog({ cli: async () => undefined, sdk: () => pending.promise });
+    const refresh = catalog.refresh('/a');
+    await Promise.resolve();
+    expect(catalog.has('/a')).toBe(false);
+    pending.resolve(models);
+    await refresh;
+    expect(catalog.read('/a')).toHaveLength(3);
   });
-
-  it('reports stale once the cache TTL elapses', async () => {
-    vi.useFakeTimers();
-    try {
-      mockPiCatalog();
-      await listSelectableModels({ forceRefresh: true, cwd: '/tmp/stale-check' });
-
-      expect(isModelCatalogStale('/tmp/stale-check')).toBe(false);
-
-      vi.advanceTimersByTime(31_000);
-      expect(isModelCatalogStale('/tmp/stale-check')).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('keeps stale data on failure, backs off, and accepts an authoritative empty result', async () => {
+    let now = 100;
+    const cli = vi.fn<() => Promise<AvailableModelInfo[] | undefined>>().mockResolvedValue(models);
+    const catalog = new ModelCatalog({ cli, sdk: async () => models }, () => now);
+    await catalog.refresh('/a');
+    now += 31_000;
+    cli.mockResolvedValue(undefined);
+    await expect(catalog.refresh('/a')).rejects.toThrow('temporarily unavailable');
+    expect(catalog.status('/a')).toBe('stale');
+    expect(catalog.read('/a')).toHaveLength(3);
+    catalog.schedule('/a');
+    expect(cli).toHaveBeenCalledTimes(2);
+    cli.mockResolvedValue([]);
+    await catalog.refresh('/a');
+    expect(catalog.read('/a')).toEqual([]);
+    expect(catalog.status('/a')).toBe('ready');
+  });
+  it('keeps project scopes and catalogs isolated and reloads changed settings', async () => {
+    let scope = ['test/alpha'];
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: async (cwd, _signal, settings) => {
+        settings(cwd === '/a' ? scope : ['other/*']);
+        return models;
+      },
+    });
+    await Promise.all([catalog.refresh('/a'), catalog.refresh('/b')]);
+    expect(catalog.selectable('/a').map((m) => m.id)).toEqual(['alpha']);
+    expect(catalog.selectable('/b').map((m) => m.id)).toEqual(['gamma']);
+    scope = ['test/beta'];
+    await catalog.refresh('/a');
+    expect(catalog.selectable('/a').map((m) => m.id)).toEqual(['beta']);
+    expect(resolveEnabledModelScope(['other/gamma', 'test/*'], models).map((m) => m.id)).toEqual([
+      'gamma',
+      'alpha',
+      'beta',
+    ]);
+  });
+  it('does not interpret malformed output as an empty directory', () => {
+    expect(parsePiModelList('extension failed to load')).toBeUndefined();
+    expect(parsePiModelList('provider model thinking\n')).toEqual([]);
   });
 });
 
@@ -200,7 +152,7 @@ describe('parsePiModelList', () => {
     ]);
   });
 
-  it('returns an empty catalog when no table header is present', () => {
+  it('recognizes the explicit no-models response', () => {
     expect(parsePiModelList('no models available\n')).toEqual([]);
   });
 });

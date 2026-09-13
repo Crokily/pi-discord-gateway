@@ -3,6 +3,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { checkPiDependencies } from './preflight.js';
 import type { RegisteredChannel } from '../types.js';
 import { config, resolveConfigPath } from '../config.js';
 
@@ -10,12 +11,16 @@ type DbModule = typeof import('../db.js');
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const [command, ...args] = argv;
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < 22 || (major === 22 && minor < 19))
+    throw new Error('piscord requires Node.js >=22.19.0. Upgrade Node.js before continuing.');
 
   switch (command) {
     case undefined:
       printHelp();
       return 0;
     case 'setup': {
+      checkPiDependencies();
       const { runSetup } = await import('./setup.js');
       await runSetup(args);
       return 0;
@@ -25,6 +30,34 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       checkPiDependencies();
       const { startGateway } = await import('../index.js');
       await startGateway();
+      return 0;
+    }
+    case 'threads': {
+      const [channelId, mode] = args;
+      if (!channelId || !['on', 'off'].includes(mode) || args.length !== 2)
+        throw new Error('Usage: piscord threads <channel-id> <on|off>');
+      await withDb(({ getChannel, setChannelThreadMode }) => {
+        const jid = toDiscordChannelJid(channelId);
+        const channel = getChannel(jid);
+        if (!channel || channel.deletedAt) throw new Error('Register the parent channel first.');
+        if (channel.parentJid || channel.folder.startsWith('dm_'))
+          throw new Error('Automatic threads require a parent server text channel.');
+        setChannelThreadMode(jid, mode === 'on' ? 'auto' : 'off');
+        console.log(`Automatic threads ${mode} for ${jid}. Existing conversations are preserved.`);
+      });
+      return 0;
+    }
+    case 'result': {
+      const id = Number(args[0]);
+      if (!Number.isSafeInteger(id) || id < 1 || args.length !== 1)
+        throw new Error('Usage: piscord result <task-id>');
+      await withDb(({ getQueuedMessage }) => {
+        const message = getQueuedMessage(id);
+        if (!message) throw new Error('Task not found.');
+        console.log(
+          message.response_text ?? `Task #${id}: ${message.status}; no answer was saved.`,
+        );
+      });
       return 0;
     }
     case 'status': {
@@ -97,6 +130,8 @@ export function formatHelpText(): string {
     '  piscord task remove <id>                      Remove a scheduled task',
     '  piscord task enable <id>                      Enable a scheduled task',
     '  piscord task disable <id>                     Disable a scheduled task',
+    '  piscord threads <channel-id> <on|off>          Configure automatic conversation threads',
+    '  piscord result <task-id>                       Read a saved answer without rerunning pi',
     '  piscord channels                              List registered channels',
     '  piscord send --channel <jid> [--text <message>] [--file <path> ...]',
     '  piscord register <id> <name> [opts]          Register a Discord channel',
@@ -411,47 +446,10 @@ async function cliArchiveCleanup(args: string[]): Promise<void> {
   );
 }
 
-async function reportError(command: string | undefined, err: unknown): Promise<void> {
+async function reportError(_command: string | undefined, err: unknown): Promise<void> {
   const message = errorMessage(err);
 
-  if (command === 'start') {
-    const [{ closeDb }, { stopDiscord }, { logger }] = await Promise.all([
-      import('../db.js'),
-      import('../discord/client.js'),
-      import('../logger.js'),
-    ]);
-
-    logger.fatal({ err: message }, 'Gateway exited with error');
-    stopDiscord();
-    closeDb();
-    return;
-  }
-
   console.error(`Error: ${message}`);
-}
-
-function checkPiDependencies(): void {
-  if (canResolveImport('@earendil-works/pi-ai')) {
-    return;
-  }
-
-  let hint = '';
-  if (canResolveImport('@mariozechner/pi-ai')) {
-    hint =
-      '\n\nDetected legacy @mariozechner/pi-ai. This package has moved to @earendil-works/pi-ai.' +
-      '\nUpgrade pi to v0.74.0+ to get the new packages.';
-  }
-
-  throw new Error(`Required peer dependency @earendil-works/pi-ai is not installed.${hint}`);
-}
-
-function canResolveImport(specifier: string): boolean {
-  try {
-    import.meta.resolve(specifier);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function maybeRunFirstTimeSetup(): Promise<boolean> {
@@ -638,6 +636,8 @@ function formatChannelSummary(channel: RegisteredChannel): string {
     .filter(Boolean)
     .join(', ');
   const overrides = [
+    `threads=${channel.threadMode || 'off'}`,
+    ...(channel.parentJid ? [`parent=${channel.parentJid}`] : []),
     `cwd=${channel.cwdOverride || config.piCwd}${channel.cwdOverride ? ' (channel)' : ''}`,
     channel.modelOverride ? `model=${channel.modelOverride}` : '',
     channel.thinkingOverride ? `thinking=${channel.thinkingOverride}` : '',

@@ -4,9 +4,11 @@ import { initDb, closeDb, getAllChannels } from './db.js';
 import { startDiscord, stopDiscord, getBotTag } from './discord/client.js';
 import { startArchiveCleanup } from './session/archive-cleanup.js';
 import { startMediaCleanup } from './session/media.js';
-import { listAvailableModels } from './agent/model-catalog.js';
+import { refreshModelCatalog, stopModelCatalog } from './agent/model-catalog.js';
 import { startProcessingLoop, stopProcessingLoop } from './agent/queue.js';
 import { startScheduler } from './agent/scheduler.js';
+import { acquireInstanceLock } from './instance-lock.js';
+import { startThreadMaintenance } from './discord/threads.js';
 
 /**
  * pi-discord-gateway - Lightweight Discord gateway for pi coding agent.
@@ -21,11 +23,26 @@ export async function startGateway(): Promise<void> {
     );
   }
 
-  initDb();
+  const releaseLock = await acquireInstanceLock(config.dbPath, (err) => {
+    logger.fatal({ err }, 'Gateway instance lock lost');
+    process.exitCode = 1;
+    void stopProcessingLoop({ timeoutMs: 0 })
+      .then(() => shutdown('instance lock lost'))
+      .catch((error) => logger.error({ err: error }, 'Cleanup after lock loss failed'))
+      .finally(() => resolveSignalWait());
+  });
+  try {
+    initDb();
+  } catch (error) {
+    closeDb();
+    await releaseLock();
+    throw error;
+  }
 
   let stopArchiveCleanup = () => {};
   let stopMediaCleanup = () => {};
   let stopScheduler = () => {};
+  let stopThreads: () => Promise<void> = async () => {};
   let processingStarted = false;
   let shutdownPromise: Promise<void> | null = null;
 
@@ -56,6 +73,7 @@ export async function startGateway(): Promise<void> {
       logger.info({ reason }, 'Shutting down gateway');
 
       stopScheduler();
+      await stopThreads();
       stopArchiveCleanup();
       stopMediaCleanup();
 
@@ -63,8 +81,10 @@ export async function startGateway(): Promise<void> {
         await stopProcessingLoop({ timeoutMs: config.shutdownTimeoutMs });
       }
 
+      await stopModelCatalog();
       stopDiscord();
       closeDb();
+      await releaseLock();
       logger.info('Gateway stopped');
     })();
 
@@ -73,7 +93,7 @@ export async function startGateway(): Promise<void> {
 
   try {
     logger.info('Starting pi-discord-gateway...');
-    warmModelCatalogs();
+    void warmModelCatalogs();
 
     await startDiscord();
     if (shutdownPromise) {
@@ -84,6 +104,7 @@ export async function startGateway(): Promise<void> {
     startProcessingLoop();
     processingStarted = true;
     stopScheduler = startScheduler();
+    stopThreads = startThreadMaintenance();
     stopArchiveCleanup = startArchiveCleanup();
     stopMediaCleanup = startMediaCleanup();
 
@@ -105,7 +126,7 @@ export async function startGateway(): Promise<void> {
   }
 }
 
-function warmModelCatalogs(): void {
+async function warmModelCatalogs(): Promise<void> {
   const workingDirectories = new Set([
     config.piCwd,
     ...getAllChannels()
@@ -113,12 +134,14 @@ function warmModelCatalogs(): void {
       .filter(Boolean),
   ]);
 
-  for (const cwd of workingDirectories) {
-    try {
-      const models = listAvailableModels({ forceRefresh: true, cwd });
-      logger.info({ cwd, models: models.length }, 'Model catalog warmed');
-    } catch (err: any) {
-      logger.warn({ cwd, err: err.message }, 'Failed to warm model catalog');
-    }
-  }
+  await Promise.allSettled(
+    [...workingDirectories].map(async (cwd) => {
+      try {
+        const models = await refreshModelCatalog(cwd);
+        logger.info({ cwd, models: models.length }, 'Model catalog warmed');
+      } catch (err: any) {
+        logger.warn({ cwd, err: err.message }, 'Failed to warm model catalog');
+      }
+    }),
+  );
 }

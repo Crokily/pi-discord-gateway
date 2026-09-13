@@ -11,6 +11,7 @@ import {
 } from '../session/path.js';
 import type { AgentResult } from '../types.js';
 import { resolvePiSpawn } from './pi-spawn.js';
+import { runProcess } from './subprocess.js';
 
 export interface SessionTokenUsage {
   input: number;
@@ -106,75 +107,43 @@ export async function invokeAgent(
   const prompt = attachmentPrompt ? `${userText}\n\n${attachmentPrompt}` : userText;
   args.push('-p', prompt);
 
-  const { bin: effectiveBin, args: effectiveArgs } = resolvePiSpawn(config.piBin, args);
+  const { bin: effectiveBin, args: effectiveArgs } = await resolvePiSpawn(config.piBin, args);
 
   logger.debug(
     { bin: effectiveBin, args: effectiveArgs.slice(0, -1), channelFolder, cwd: effectiveCwd },
     'Spawning pi',
   );
 
-  return new Promise<AgentResult>((resolve, reject) => {
-    const proc = spawn(effectiveBin, effectiveArgs, {
-      cwd: effectiveCwd,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    const chunks: Buffer[] = [];
-    const errChunks: Buffer[] = [];
-
-    proc.stdout.on('data', (c: Buffer) => chunks.push(c));
-    proc.stderr.on('data', (c: Buffer) => errChunks.push(c));
-
-    // Abort support
-    if (opts?.signal) {
-      const onAbort = () => {
-        if (process.platform === 'win32') {
-          proc.kill();
-        } else {
-          proc.kill('SIGTERM');
-          setTimeout(() => proc.kill('SIGKILL'), 5000);
-        }
-      };
-      opts.signal.addEventListener('abort', onAbort, { once: true });
-      proc.on('close', () => opts.signal!.removeEventListener('abort', onAbort));
-    }
-
-    proc.on('close', (code) => {
-      const stdout = Buffer.concat(chunks).toString('utf-8').trim();
-      const stderr = Buffer.concat(errChunks).toString('utf-8').trim();
-
-      if (code !== 0) {
-        logger.warn({ code, stderr: stderr.slice(0, 500), channelFolder }, 'pi exited with error');
-        resolve({
-          ok: false,
-          text: '',
-          error: stderr.slice(0, 600) || `pi exited with code ${code}`,
-        });
-        return;
-      }
-
-      if (!stdout) {
-        const sessionError = readLatestAgentErrorFromSession(channelFolder);
-        resolve({
-          ok: false,
-          text: '',
-          error:
-            sessionError ||
-            stderr.slice(0, 600) ||
-            'pi completed without producing a response (empty stdout)',
-        });
-        return;
-      }
-
-      resolve({ ok: true, text: stdout });
-    });
-
-    proc.on('error', (err) => {
-      logger.error({ err: err.message }, 'Failed to spawn pi');
-      reject(err);
-    });
+  const result = await runProcess(effectiveBin, effectiveArgs, {
+    cwd: effectiveCwd,
+    signal: opts?.signal,
+    timeoutMs: config.agentTimeoutMs,
   });
+  if (result.aborted) return { ok: false, text: '', error: 'Task stopped', reason: 'cancelled' };
+  if (result.timedOut)
+    return {
+      ok: false,
+      text: '',
+      error: `Task exceeded the configured ${Math.round(config.agentTimeoutMs / 1000)}s time limit`,
+      reason: 'timeout',
+    };
+  if (result.error || result.code !== 0) {
+    return {
+      ok: false,
+      text: '',
+      error: result.error || result.stderr.slice(0, 600) || `pi exited with code ${result.code}`,
+    };
+  }
+  if (!result.stdout)
+    return {
+      ok: false,
+      text: '',
+      error:
+        readLatestAgentErrorFromSession(channelFolder) ||
+        result.stderr.slice(0, 600) ||
+        'pi completed without producing a response',
+    };
+  return { ok: true, text: result.stdout };
 }
 
 export function buildAttachmentPathPrompt(downloaded: DownloadedFile[]): string {
@@ -327,7 +296,7 @@ async function getSessionStatsViaRpc(
   cwd: string,
 ): Promise<{ tokens: SessionTokenUsage; contextUsage?: SessionContextUsage }> {
   const args = ['--mode', 'rpc', '--session', sessionFile];
-  const { bin: rpcBin, args: rpcArgs } = resolvePiSpawn(config.piBin, args);
+  const { bin: rpcBin, args: rpcArgs } = await resolvePiSpawn(config.piBin, args);
 
   return new Promise((resolve, reject) => {
     const proc = spawn(rpcBin, rpcArgs, {

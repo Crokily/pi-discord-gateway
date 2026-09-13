@@ -11,7 +11,7 @@ Thanks for your interest in contributing! This guide will help you get started.
    cd pi-discord-gateway
    ```
 
-2. **Install dependencies** (Node.js >= 20 required):
+2. **Install dependencies** (Node.js >= 22.19.0 required):
 
    ```bash
    npm install
@@ -50,6 +50,8 @@ Thanks for your interest in contributing! This guide will help you get started.
    npm run lint      # ESLint
    npm run format    # Prettier (auto-fix)
    npm test          # Vitest
+   npm run typecheck # Source and test type checking
+   npm run test:compat # Real installed pi, using a local HTTP model fixture
    npm run build     # TypeScript compilation
    ```
 

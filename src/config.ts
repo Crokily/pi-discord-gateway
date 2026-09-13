@@ -172,6 +172,9 @@ export const config = {
   /** Graceful shutdown timeout before aborting in-flight tasks (ms) */
   shutdownTimeoutMs: envInt('SHUTDOWN_TIMEOUT_MS', 15_000, { min: 0 }),
 
+  /** Maximum pi invocation duration; 0 keeps long-running tasks unlimited. */
+  agentTimeoutMs: envInt('AGENT_TIMEOUT_MS', 0, { min: 0 }),
+
   /** Log level */
   logLevel: env('LOG_LEVEL', 'info'),
 

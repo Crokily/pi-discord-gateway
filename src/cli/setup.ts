@@ -1,9 +1,11 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { runProcess } from '../agent/subprocess.js';
+import { resolvePiSpawn } from '../agent/pi-spawn.js';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import * as clack from '@clack/prompts';
-import { listAvailableModels } from '../agent/model-catalog.js';
+import { config } from '../config.js';
 import { defaultDataDir, resolveConfigPath } from '../config.js';
 
 const SERVICE_NAME = 'pi-discord-gateway';
@@ -12,7 +14,10 @@ const DEFAULT_WORKING_DIR = homedir();
 const DEFAULT_DATA_DIR = defaultDataDir();
 const DEFAULT_SESSIONS_DIR = resolve(DEFAULT_DATA_DIR, 'sessions');
 const DEFAULT_DB_PATH = resolve(DEFAULT_DATA_DIR, 'gateway.db');
-const AUTH_PATH = resolve(homedir(), '.pi/agent/auth.json');
+const AUTH_PATH = resolve(
+  process.env.PI_CODING_AGENT_DIR || resolve(homedir(), '.pi/agent'),
+  'auth.json',
+);
 
 export async function runSetup(args: string[]): Promise<void> {
   const tokenArg = args[0]?.trim() ?? '';
@@ -28,7 +33,7 @@ export async function runSetup(args: string[]): Promise<void> {
   clack.intro('piscord setup');
 
   // ── Prerequisites ──
-  const prereqs = checkPrerequisites();
+  const prereqs = await checkPrerequisites();
   const prereqLines = [
     prereqs.piPath
       ? `  ✓ pi binary: ${prereqs.piPath}${prereqs.piVersion ? ` (${prereqs.piVersion})` : ''}`
@@ -194,19 +199,29 @@ export async function runSetup(args: string[]): Promise<void> {
   clack.outro('Setup complete! Send a message in any Discord channel to test.');
 }
 
-function checkPrerequisites(): {
+async function checkPrerequisites(): Promise<{
   piPath: string | undefined;
   piVersion: string | undefined;
   authFound: boolean;
   modelCount: number | undefined;
-} {
-  const piPath = findExecutable('pi');
-  const piVersion = piPath ? readCommandOutput('pi --version') : undefined;
+}> {
+  const piPath = findExecutable(config.piBin);
+  const command = await resolvePiSpawn(config.piBin, ['--version']);
+  const versionResult = piPath
+    ? await runProcess(command.bin, command.args, { cwd: config.piCwd, timeoutMs: 5_000 })
+    : undefined;
+  const piVersion =
+    versionResult?.code === 0 ? versionResult.stdout || versionResult.stderr : undefined;
   const authFound = existsSync(AUTH_PATH);
   let modelCount: number | undefined;
 
   try {
-    modelCount = listAvailableModels().length;
+    const { refreshModelCatalog, stopModelCatalog } = await import('../agent/model-catalog.js');
+    try {
+      modelCount = (await refreshModelCatalog(config.piCwd)).length;
+    } finally {
+      await stopModelCatalog();
+    }
   } catch {
     modelCount = undefined;
   }
@@ -216,7 +231,7 @@ function checkPrerequisites(): {
 
 function findExecutable(name: string): string | undefined {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
-  return readCommandOutput(`${cmd} ${name}`);
+  return readCommandOutput(cmd, [name]);
 }
 
 function isUnix(): boolean {
@@ -270,25 +285,20 @@ export function buildConfigFile(options: {
   ].join('\n');
 }
 
-function readCommandOutput(command: string): string | undefined {
-  try {
-    const stdout = execSync(command, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-    if (stdout) return stdout;
-  } catch {}
-  // Some commands (e.g. pi --version) output to stderr — retry with merge
+function readCommandOutput(command: string, args: string[]): string | undefined {
   try {
     return (
-      execSync(command + ' 2>&1', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() ||
-      undefined
+      execFileSync(command, args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5_000,
+      }).trim() || undefined
     );
   } catch {
     return undefined;
   }
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
