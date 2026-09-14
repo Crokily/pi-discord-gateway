@@ -50,6 +50,32 @@ function enqueue(extra: Partial<Parameters<typeof db.enqueueMessage>[0]> = {}) {
 }
 
 describe('durable recovery', () => {
+  it('waits for rate-limit reset and keeps later work behind the saved answer', async () => {
+    const { deliverResponse } = await import('../src/discord/delivery.js');
+    const id = enqueue();
+    db.claimNextMessage(channel.jid);
+    db.saveResponse(id, 'answer', ['answer']);
+    const later = enqueue();
+    const now = Date.now();
+    const io = {
+      send: vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('rate limited'), { name: 'RateLimitError', timeToReset: 10000 }),
+        ),
+      find: vi.fn(),
+    };
+    await deliverResponse(id, io, new AbortController().signal);
+    expect(db.getQueuedMessage(id)?.next_attempt_at).toBeGreaterThanOrEqual(now + 10500);
+    expect(db.getResponseChunks(id)[0].status).toBe('pending');
+    expect(db.claimNextMessage(channel.jid)).toBeUndefined();
+    db.retryDelivery(id, 0);
+    io.send.mockResolvedValue('accepted');
+    expect(await deliverResponse(id, io, new AbortController().signal)).toBe(true);
+    db.markMessageDone(id);
+    expect(db.claimNextMessage(channel.jid)?.rowid).toBe(later);
+  });
+
   it('renews the retry budget after confirmed progress through a long answer', async () => {
     const { deliverResponse } = await import('../src/discord/delivery.js');
     const id = enqueue();
@@ -130,6 +156,24 @@ describe('durable recovery', () => {
     io.find.mockResolvedValue('accepted-before-crash');
     expect(await deliverResponse(id, io, new AbortController().signal)).toBe(true);
     expect(io.send).not.toHaveBeenCalled();
+  });
+  it('preserves cancellation when an in-flight Discord request fails later', async () => {
+    const { deliverResponse } = await import('../src/discord/delivery.js');
+    const id = enqueue();
+    db.claimNextMessage(channel.jid);
+    db.saveResponse(id, 'answer', ['answer']);
+    const controller = new AbortController();
+    const io = {
+      find: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn(async () => {
+        db.setMessageState(id, 'cancelled');
+        controller.abort('user');
+        throw Object.assign(new Error('Forbidden'), { status: 403 });
+      }),
+    };
+    expect(await deliverResponse(id, io, controller.signal)).toBe(false);
+    expect(db.getQueuedMessage(id)?.status).toBe('cancelled');
+    expect(db.pendingNotices()).toHaveLength(0);
   });
   it('stops retries for permissions and honours cancellation between chunks', async () => {
     const { deliverResponse } = await import('../src/discord/delivery.js');

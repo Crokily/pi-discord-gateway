@@ -43,6 +43,7 @@ export interface QueuedMessage {
   anchor_message_id: string | null;
   response_text: string | null;
   delivery_attempts: number;
+  next_attempt_at: number;
   /** JSON array of attachment metadata, or null */
   attachments: string | null;
 }

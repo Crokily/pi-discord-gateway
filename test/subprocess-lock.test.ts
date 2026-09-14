@@ -120,6 +120,68 @@ describe('bounded subprocesses', () => {
 });
 
 describe('gateway instance lock', () => {
+  it.skipIf(process.platform === 'win32')(
+    'cleans owned processes after SIGKILL and recovers a dead owner lock',
+    async () => {
+      const dir = directory();
+      const database = join(dir, 'gateway.db');
+      const pidFile = join(dir, 'child-pid');
+      const wrapper = join(dir, 'gateway.mjs');
+      writeFileSync(
+        wrapper,
+        `
+      import { acquireInstanceLock } from ${JSON.stringify(new URL('../src/instance-lock.ts', import.meta.url).href)};
+      import { runProcess } from ${JSON.stringify(new URL('../src/agent/subprocess.ts', import.meta.url).href)};
+      await acquireInstanceLock(${JSON.stringify(database)}, () => process.exit(1));
+      await runProcess(process.execPath, ['-e', ${JSON.stringify(`require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on('SIGTERM',()=>{});setInterval(()=>{},1000);`)}], { cwd: ${JSON.stringify(dir)} });
+    `,
+      );
+      const gateway = fork(wrapper, [], { silent: true, execArgv: [] });
+      let pid = 0;
+      try {
+        const started = Date.now();
+        while (!pid && Date.now() - started < 3000) {
+          try {
+            pid = Number(readFileSync(pidFile, 'utf8'));
+          } catch {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+        }
+        expect(pid).toBeGreaterThan(0);
+        await expect(acquireInstanceLock(database, () => {})).rejects.toThrow('Another gateway');
+        const exited = new Promise((resolve) => gateway.once('exit', resolve));
+        gateway.kill('SIGKILL');
+        await exited;
+        const deadline = Date.now() + 3000;
+        let alive = true;
+        while (alive && Date.now() < deadline) {
+          try {
+            process.kill(pid, 0);
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          } catch {
+            alive = false;
+          }
+        }
+        expect(alive).toBe(false);
+        // Advance only the abandoned lock's mtime, not the system clock.
+        const stale = new Date(Date.now() - 60000);
+        utimesSync(`${database}.lock`, stale, stale);
+        await (
+          await acquireInstanceLock(database, () => {})
+        )();
+      } finally {
+        gateway.kill('SIGKILL');
+        if (pid) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            /* already reaped */
+          }
+        }
+      }
+    },
+  );
+
   it('recovers a stale empty lock and diagnoses an unreadable ownership file', async () => {
     const dir = directory();
     const path = join(dir, 'gateway.db');

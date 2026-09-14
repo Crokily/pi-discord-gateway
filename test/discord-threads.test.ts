@@ -83,6 +83,19 @@ function parent() {
   });
 }
 describe('Discord thread reception', () => {
+  it('ignores Discord system notices instead of adopting a manually created thread', async () => {
+    await boot('allowlist');
+    parent();
+    db.registerChannel({ ...db.getChannel('dc:parent')!, requiresTrigger: false });
+    db.setChannelThreadMode('dc:parent', 'auto');
+    await receive({ ...message('thread', 'manual-thread-name'), system: true } as ReturnType<
+      typeof message
+    >);
+    expect(db.channelsWithPending()).toEqual([]);
+    await receive(message('manual-question', 'hello', true));
+    expect(db.getChannel('dc:thread')).toBeUndefined();
+  });
+
   it('keeps automatic threads off and preserves the existing open-channel behavior', async () => {
     await boot('open');
     await receive(message('first', 'hello'));

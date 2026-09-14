@@ -33,6 +33,7 @@ export async function deliverResponse(
         finishChunk(rowid, chunk.part, previous);
         continue;
       }
+      if (signal.aborted || getQueuedMessage(rowid)?.status !== 'delivering') return false;
       if (isUncertainChunk(chunk)) {
         setMessageState(
           rowid,
@@ -46,6 +47,8 @@ export async function deliverResponse(
       const id = await transport.send(message.channel_jid, chunk.content, chunk.nonce);
       finishChunk(rowid, chunk.part, id);
     } catch (error) {
+      // A late network result must not overwrite /stop or shutdown state.
+      if (signal.aborted || getQueuedMessage(rowid)?.status !== 'delivering') return false;
       const failure = error as { status?: number; name?: string; timeToReset?: number };
       const status = failure.status;
       const rateLimited = status === 429 || failure.name === 'RateLimitError';

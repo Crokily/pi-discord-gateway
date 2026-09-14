@@ -130,8 +130,8 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
 }
 
 async function handleMessage(message: Message): Promise<void> {
-  // Ignore bot messages
-  if (message.author.bot) return;
+  // System notices (including ThreadCreated) are not user prompts.
+  if (message.author.bot || message.system) return;
 
   const isDM = !message.guild;
   const channelId = message.channelId;

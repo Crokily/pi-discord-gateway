@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.
+- Late Discord request failures preserve explicit task cancellation instead of replacing it with a delivery error.
+
 - New pi releases no longer fail on the removed AuthStorage export or obsolete ModelRegistry initialization.
 - Reply metadata no longer hides an explicit bot mention from trigger matching.
 - Cancellation, shutdown and timeout clean up process listeners and timers; stopped tasks are not revived on restart.
