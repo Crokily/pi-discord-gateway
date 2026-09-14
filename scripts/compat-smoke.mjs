@@ -124,6 +124,14 @@ try {
     db.initDb(); db.closeDb(); console.log('DATABASE_OK');`);
   assert.equal(database.code, 0, database.stderr);
   assert.match(database.stdout, /DATABASE_OK/);
+  const cliProbe = await script(`
+    const { resolvePiSpawn } = await import(${JSON.stringify(moduleUrl('agent/pi-spawn.js'))});
+    const { runProcess } = await import(${JSON.stringify(moduleUrl('agent/subprocess.js'))});
+    const command = await resolvePiSpawn(process.env.PI_BIN, ['--list-models']);
+    const result = await runProcess(command.bin, command.args, {cwd: process.cwd(), timeoutMs: 15000});
+    console.log(JSON.stringify({command, result}));`);
+  assert.equal(cliProbe.code, 0, cliProbe.stderr);
+  assert.equal(JSON.parse(cliProbe.stdout).result.code, 0, cliProbe.stdout);
   const catalogScript = `const c = await import(${JSON.stringify(moduleUrl('agent/model-catalog.js'))}); try { const models = await c.refreshModelCatalog(); console.log(JSON.stringify(models)); } finally { await c.stopModelCatalog(); }`;
   const empty = await script(catalogScript);
   assert.equal(empty.code, 0, empty.stderr);
