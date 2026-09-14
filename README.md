@@ -13,7 +13,7 @@
 
 A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). SQLite-backed queue, per-channel session isolation, crash recovery, abort support. One command to set up, runs as a daemon, and keeps task and delivery state across restarts.
 
-**Latest release:** see the npm version badge above and [Changelog](./CHANGELOG.md) for details.
+**Latest release: 2.0.0.** Requires Node.js ≥22.19.0 and pi ≥0.83.0 <0.86.0. See [upgrade and recovery](#task-recovery-and-delivery) before updating from 1.x, and [Changelog](./CHANGELOG.md) for details.
 
 ```bash
 npm install -g piscord
@@ -390,23 +390,23 @@ MIT
 
 ## Version History
 
-| Version    | Date       | Changes                                                                      |
-| ---------- | ---------- | ---------------------------------------------------------------------------- |
-| Unreleased | —          | Modern pi compatibility, optional threads and durable task/delivery recovery |
-| 1.7.0      | 2026-07-17 | `/pi model` syncs with pi's catalog and `enabledModels`                      |
-| 1.6.1      | 2026-06-15 | Fixed README version metadata                                                |
-| 1.6.0      | 2026-06-15 | Path-based attachment relay and clearer empty-output errors                  |
-| 1.5.3      | 2026-05-19 | Fix ESM peer-dep check, cross-platform test fixes                            |
-| 1.5.1      | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package                       |
-| 1.5.0      | 2026-05-15 | Cross-platform support (macOS, Windows), launchd, new deps                   |
-| 1.4.3      | 2026-05-03 | Compatibility with older pi-ai thinking APIs                                 |
-| 1.4.2      | 2026-04-06 | Fixed default XDG data directory mismatch                                    |
-| 1.4.1      | 2026-04-06 | Fixed text-only sends via piscord send                                       |
-| 1.4.0      | 2026-04-06 | Added per-channel working directories                                        |
-| 1.3.0      | 2026-04-04 | Improved setup UX, faster install                                            |
-| 1.2.0      | 2026-04-04 | Added channel policy, abort, scheduler, send-file                            |
-| 1.1.0      | 2026-03-31 | Renamed package to piscord                                                   |
-| 1.0.0      | 2026-03-28 | Initial release                                                              |
+| Version | Date       | Changes                                                                      |
+| ------- | ---------- | ---------------------------------------------------------------------------- |
+| 2.0.0   | 2026-09-14 | Modern pi compatibility, optional threads and durable task/delivery recovery |
+| 1.7.0   | 2026-07-17 | `/pi model` syncs with pi's catalog and `enabledModels`                      |
+| 1.6.1   | 2026-06-15 | Fixed README version metadata                                                |
+| 1.6.0   | 2026-06-15 | Path-based attachment relay and clearer empty-output errors                  |
+| 1.5.3   | 2026-05-19 | Fix ESM peer-dep check, cross-platform test fixes                            |
+| 1.5.1   | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package                       |
+| 1.5.0   | 2026-05-15 | Cross-platform support (macOS, Windows), launchd, new deps                   |
+| 1.4.3   | 2026-05-03 | Compatibility with older pi-ai thinking APIs                                 |
+| 1.4.2   | 2026-04-06 | Fixed default XDG data directory mismatch                                    |
+| 1.4.1   | 2026-04-06 | Fixed text-only sends via piscord send                                       |
+| 1.4.0   | 2026-04-06 | Added per-channel working directories                                        |
+| 1.3.0   | 2026-04-04 | Improved setup UX, faster install                                            |
+| 1.2.0   | 2026-04-04 | Added channel policy, abort, scheduler, send-file                            |
+| 1.1.0   | 2026-03-31 | Renamed package to piscord                                                   |
+| 1.0.0   | 2026-03-28 | Initial release                                                              |
 
 See [Changelog](./CHANGELOG.md) for full details.
 
