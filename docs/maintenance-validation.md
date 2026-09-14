@@ -1,10 +1,10 @@
 # Maintenance validation
 
-Validated on 2026-09-14 before PR submission. The final runtime fixes are in `72c4d72`; subsequent changes add tests, documentation and consistent LF checkouts for cross-platform CI.
+Validated on 2026-09-14 before PR submission. Live Discord regression exercised runtime revision `72c4d72`. Subsequent CI fixes resolve Windows npm command shims and make test paths/checkouts portable.
 
 ## Automated checks
 
-- 88 tests across 20 files pass on the minimum supported Node.js version, 22.19.0.
+- 92 tests across 21 files pass on the minimum supported Node.js version, 22.19.0.
 - ESLint, Prettier, source/test type checking, build, and `git diff --check` pass.
 - Real pi 0.83.0, 0.84.2 and 0.85.1 package fixtures were exercised during implementation, including SDK fallback, CLI discovery, extension models and session continuation. Node 24 and mixed SDK/CLI versions were also exercised. The final runtime revision was smoke-tested with pi 0.85.1 again.
 - New queue integration tests use real supervised processes and SQLite. They cover active cancellation, pending cancellation, independent conversations, bounded shutdown, restart without replay, timeout despite ignored SIGTERM, and resuming long-answer delivery without invoking pi again.
@@ -40,7 +40,8 @@ The existing Linux deployment was backed up and upgraded in an independent relea
 ## Issues found and fixed
 
 1. A Discord ThreadCreated system notice was treated as a user prompt in a parent with automatic threads enabled. It could cause a manually created thread to be adopted and bypass separate allowlist registration. System notices are now ignored before registration or enqueueing; the failure was reproduced in a test and the fix was verified in a new real Discord thread.
-2. A Discord request that failed after `/pi stop` could overwrite cancellation with a delivery failure and create an unwanted notice. Delivery now rechecks cancellation/current state after asynchronous operations. A failing regression test demonstrated the original race.
+2. Windows real-package CI exposed a configured npm `.cmd` path being passed directly to `spawn`, producing EINVAL while cold discovery could fall back to the SDK. Explicit shim paths now resolve to their Node entry point; the smoke test asserts CLI discovery independently of SDK fallback.
+3. A Discord request that failed after `/pi stop` could overwrite cancellation with a delivery failure and create an unwanted notice. Delivery now rechecks cancellation/current state after asynchronous operations. A failing regression test demonstrated the original race.
 
 The deployment also had two configuration issues: the service PATH omitted an installed CLI required by a pi extension, and its global model referenced a model no longer available to that account. PATH was corrected and only the test channel's model was changed to the already configured pi default. These were environment changes, not gateway code fixes.
 

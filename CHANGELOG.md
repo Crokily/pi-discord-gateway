@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Windows pi discovery resolves explicit npm `.cmd` paths to their Node entry point instead of attempting to spawn the command script directly.
 - Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.
 - Late Discord request failures preserve explicit task cancellation instead of replacing it with a delivery error.
 - New pi releases no longer fail on the removed AuthStorage export or obsolete ModelRegistry initialization.

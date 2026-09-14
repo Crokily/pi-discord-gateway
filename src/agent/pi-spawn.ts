@@ -14,27 +14,37 @@ export async function resolvePiSpawn(
   }
 
   try {
-    const { stdout } = await execFileAsync('where', [piBin], {
-      encoding: 'utf8',
-      timeout: 3_000,
-      windowsHide: true,
-    });
-    const shimPath = stdout.split(/\r?\n/).find((line) => line.trim().endsWith('.cmd'));
-
+    let shimPath = /\.cmd$/i.test(piBin) && /[/\\]/.test(piBin) ? piBin : undefined;
+    if (!shimPath) {
+      const { stdout } = await execFileAsync('where.exe', [piBin], {
+        encoding: 'utf8',
+        timeout: 3_000,
+        windowsHide: true,
+      });
+      shimPath = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => /\.cmd$/i.test(line));
+    }
     if (shimPath) {
-      const content = await readFile(shimPath.trim(), 'utf8');
-      const jsMatch = content.match(/"([^"]+\.js)"/);
-      if (jsMatch) {
-        const jsPath = pathResolve(
-          dirname(shimPath.trim()),
-          jsMatch[1].replace(/%~?dp0%?/gi, './'),
-        );
-        return { bin: process.execPath, args: [jsPath, ...args] };
-      }
+      const command = await resolveNpmCmdShim(shimPath, args);
+      if (command) return command;
     }
   } catch {
     // Fall through to the configured binary.
   }
 
   return { bin: piBin, args };
+}
+
+/** Read an npm shim directly; `where` does not reliably resolve explicit file paths. */
+export async function resolveNpmCmdShim(
+  shimPath: string,
+  args: string[],
+): Promise<{ bin: string; args: string[] } | undefined> {
+  const content = await readFile(shimPath, 'utf8');
+  const jsMatch = content.match(/"([^"\r\n]+\.(?:c|m)?js)"/i);
+  if (!jsMatch) return undefined;
+  const jsPath = pathResolve(dirname(shimPath), jsMatch[1].replace(/%~?dp0%?/gi, './'));
+  return { bin: process.execPath, args: [jsPath, ...args] };
 }
