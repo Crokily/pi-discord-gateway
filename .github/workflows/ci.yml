@@ -8,11 +8,19 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
-        node-version: [20, 22]
+        include:
+          - os: ubuntu-latest
+            node-version: '22.19.0'
+          - os: ubuntu-latest
+            node-version: '24'
+          - os: windows-latest
+            node-version: '22.19.0'
+          - os: macos-latest
+            node-version: '22.19.0'
 
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +43,39 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Type-check source and tests
+        run: npm run typecheck
+
       - name: Test
         run: npm test
 
       - name: CLI smoke test
-        run: node dist/cli/index.js help
+        run: node scripts/compat-smoke.mjs
 
       - name: Package dry-run
         run: npm pack --dry-run
+
+  pi-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pi-version: ['0.83.0', '0.84.2', '0.85.1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install the packed gateway with real pi peers and exercise it
+        env:
+          PI_TEST_VERSION: ${{ matrix.pi-version }}
+        run: |
+          PACKAGE_TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" --silent)
+          npm install --prefix "$RUNNER_TEMP/piscord-fixture" --no-audit --no-fund \
+            "$RUNNER_TEMP/$PACKAGE_TARBALL" \
+            "@earendil-works/pi-coding-agent@$PI_TEST_VERSION" \
+            "@earendil-works/pi-ai@$PI_TEST_VERSION"
+          node scripts/compat-smoke.mjs "$RUNNER_TEMP/piscord-fixture/node_modules/piscord"

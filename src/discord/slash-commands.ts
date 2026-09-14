@@ -1,6 +1,8 @@
 import {
   MessageFlags,
   SlashCommandBuilder,
+  ChannelType,
+  PermissionFlagsBits,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
   type Client,
@@ -15,6 +17,8 @@ import {
 import { config } from '../config.js';
 import {
   clearChannelModelOverride,
+  clearChannelThinkingOverride,
+  setChannelThreadMode,
   clearPendingMessages,
   createDmChannel,
   getChannel,
@@ -28,7 +32,9 @@ import {
   hasCachedModelCatalog,
   isModelCatalogStale,
   isThinkingLevel,
-  listAvailableModels,
+  scheduleCatalogRefresh,
+  refreshModelCatalog,
+  getModelCatalogStatus,
   listSelectableModels,
   resolveModelReference,
   resolveThinkingForModel,
@@ -38,6 +44,7 @@ import {
   buildThinkingAdjustmentMessage,
   computeEffectiveChannelSettings,
   getDesiredThinkingLevel,
+  getEffectiveCwd,
   type EffectiveChannelSettings,
 } from '../agent/channel-settings.js';
 import { abortChannelTask, isChannelProcessing } from '../agent/queue.js';
@@ -47,6 +54,17 @@ import type { RegisteredChannel } from '../types.js';
 const PI_COMMAND = new SlashCommandBuilder()
   .setName('pi')
   .setDescription('Inspect or change pi model settings for this channel')
+  .addSubcommand((sub) =>
+    sub
+      .setName('threads')
+      .setDescription('Automatically answer new questions in threads in this channel')
+      .addBooleanOption((option) =>
+        option.setName('enabled').setDescription('Enable automatic threads').setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
+    sub.setName('reset-thinking').setDescription('Inherit the default thinking level again'),
+  )
   .addSubcommand((sub) =>
     sub
       .setName('status')
@@ -100,23 +118,6 @@ export async function registerGlobalCommands(client: Client<true>): Promise<void
   logger.info('Registered global slash commands');
 }
 
-const catalogRefreshesInFlight = new Set<string>();
-
-/** Refresh a cwd's model catalog off the interaction path, at most once at a time. */
-function scheduleCatalogRefresh(cwd: string): void {
-  if (catalogRefreshesInFlight.has(cwd)) return;
-  catalogRefreshesInFlight.add(cwd);
-  setImmediate(() => {
-    try {
-      listAvailableModels({ forceRefresh: true, cwd });
-    } catch (err: any) {
-      logger.warn({ cwd, err: err.message }, 'Failed to warm model catalog');
-    } finally {
-      catalogRefreshesInFlight.delete(cwd);
-    }
-  });
-}
-
 export async function handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
   if (interaction.commandName !== 'pi') return;
   if (interaction.options.getSubcommand() !== 'model') return;
@@ -128,7 +129,7 @@ export async function handleAutocomplete(interaction: AutocompleteInteraction): 
     return;
   }
 
-  const cwd = channel.cwdOverride || config.piCwd;
+  const cwd = getEffectiveCwd(channel);
   if (!hasCachedModelCatalog(cwd)) {
     await interaction.respond([]);
     scheduleCatalogRefresh(cwd);
@@ -159,6 +160,68 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
 
   try {
     switch (subcommand) {
+      case 'threads': {
+        if (!interaction.inGuild() || interaction.channel?.type !== ChannelType.GuildText) {
+          await interaction.reply(
+            reply(
+              'Automatic threads can be configured in a regular server text channel.',
+              interaction,
+            ),
+          );
+          return;
+        }
+        if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+          await interaction.reply(
+            reply(
+              'Manage Channels permission is required to change automatic threads.',
+              interaction,
+            ),
+          );
+          return;
+        }
+        const channel = ensureManagedChannel(interaction);
+        if (!channel) {
+          await interaction.reply(reply(notRegisteredMessage(), interaction));
+          return;
+        }
+        const enabled = interaction.options.getBoolean('enabled', true);
+        const permissions = interaction.appPermissions;
+        if (
+          enabled &&
+          (!permissions?.has(PermissionFlagsBits.CreatePublicThreads) ||
+            !permissions.has(PermissionFlagsBits.SendMessagesInThreads))
+        ) {
+          await interaction.reply(
+            reply(
+              'The bot needs Create Public Threads and Send Messages in Threads permissions.',
+              interaction,
+            ),
+          );
+          return;
+        }
+        setChannelThreadMode(channel.jid, enabled ? 'auto' : 'off');
+        await interaction.reply(
+          reply(
+            enabled
+              ? 'New questions in this channel will open separate conversation threads. Continue each conversation inside its thread.'
+              : 'Automatic thread creation is off. Existing threads keep their conversations.',
+            interaction,
+          ),
+        );
+        return;
+      }
+      case 'reset-thinking': {
+        const channel = ensureManagedChannel(interaction);
+        if (!channel) {
+          await interaction.reply(reply(notRegisteredMessage(), interaction));
+          return;
+        }
+        clearChannelThinkingOverride(channel.jid);
+        await interaction.reply(
+          reply('Thinking reset; this conversation will inherit its default again.', interaction),
+        );
+        return;
+      }
       case 'status':
         await handleStatus(interaction);
         return;
@@ -269,7 +332,12 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
 
   const effective = computeEffectiveChannelSettings(channel);
   const sessionStatus = await getChannelSessionStatus(channel.folder, effective.effectiveCwd);
-  await interaction.editReply({ content: buildStatusMessage(effective, sessionStatus) });
+  const threadStatus = channel.parentJid
+    ? `Settings inherit from <#${channel.parentJid.replace(/^dc:/, '')}> unless overridden.`
+    : `Automatic threads: ${channel.threadMode === 'auto' ? 'on' : 'off'}.`;
+  await interaction.editReply({
+    content: `${buildStatusMessage(effective, sessionStatus)}\n${threadStatus}`,
+  });
 }
 
 async function handleModelSet(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -284,7 +352,7 @@ async function handleModelSet(interaction: ChatInputCommandInteraction): Promise
   );
 
   const selectedRef = interaction.options.getString('model', true);
-  const cwd = channel.cwdOverride || config.piCwd;
+  const cwd = getEffectiveCwd(channel);
   const models = await listSelectableModels({ forceRefresh: true, cwd });
   const selectedModel = resolveModelReference(selectedRef, models);
   if (!selectedModel) {
@@ -332,7 +400,7 @@ async function handleModelReset(interaction: ChatInputCommandInteraction): Promi
   clearChannelModelOverride(channel.jid);
 
   const updated = getChannel(channel.jid)!;
-  const effective = computeEffectiveChannelSettings(updated, { forceRefresh: true });
+  const effective = computeEffectiveChannelSettings(updated);
   const notes = ['Model reset for this channel.'];
 
   if (updated.thinkingOverride && effective.thinkingAdjusted) {
@@ -368,7 +436,8 @@ async function handleThinkingSet(interaction: ChatInputCommandInteraction): Prom
     interaction.inGuild() ? { flags: MessageFlags.Ephemeral } : undefined,
   );
 
-  const effective = computeEffectiveChannelSettings(channel, { forceRefresh: true });
+  await refreshModelCatalog(getEffectiveCwd(channel)).catch(() => undefined);
+  const effective = computeEffectiveChannelSettings(channel);
   const resolution = resolveThinkingForModel(effective.modelInfo, rawLevel);
 
   setChannelThinkingOverride(channel.jid, resolution.effective);
@@ -414,6 +483,7 @@ function buildStatusMessage(
 ): string {
   const rows: Array<[string, string]> = [
     ['Model', formatModelValue(effective)],
+    ['Model catalog', getModelCatalogStatus(effective.effectiveCwd)],
     ['Thinking', formatThinkingValue(effective)],
     ['Working dir', formatWorkingDirValue(effective)],
   ];
@@ -468,11 +538,13 @@ function formatThinkingFallback(effective: EffectiveChannelSettings): string {
 }
 
 function formatWorkingDirValue(effective: EffectiveChannelSettings): string {
-  return `${effective.effectiveCwd} (${effective.cwdSource === 'override' ? 'channel' : 'gateway'})`;
+  return `${effective.effectiveCwd} (${formatSettingSource(effective.cwdSource)})`;
 }
 
 function formatSettingSource(source: EffectiveChannelSettings['modelSource']): string {
   switch (source) {
+    case 'parent':
+      return 'parent channel';
     case 'override':
       return 'channel';
     case 'default':

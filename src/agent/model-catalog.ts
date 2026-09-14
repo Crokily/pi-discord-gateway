@@ -1,15 +1,14 @@
-import { spawnSync } from 'node:child_process';
-import { AuthStorage, ModelRegistry, SettingsManager } from '@earendil-works/pi-coding-agent';
-import type { Model } from '@earendil-works/pi-ai';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { minimatch } from 'minimatch';
 import { config } from '../config.js';
+import { logger } from '../logger.js';
 import { THINKING_LEVELS, type ThinkingLevel } from '../types.js';
-import { supportsModelXhigh } from './pi-ai-compat.js';
 import { resolvePiSpawn } from './pi-spawn.js';
+import { runProcess } from './subprocess.js';
 
 const CACHE_TTL_MS = 30_000;
-// A hung `pi --list-models` (broken wrapper, stuck provider lookup) must not
-// block gateway startup or the event loop indefinitely.
 const LIST_MODELS_TIMEOUT_MS = 15_000;
 
 export interface AvailableModelInfo {
@@ -20,59 +19,251 @@ export interface AvailableModelInfo {
   reasoning: boolean;
   supportsXhigh: boolean;
 }
-
 interface ModelCache {
+  models?: AvailableModelInfo[];
   loadedAt: number;
-  cwd: string;
-  models: AvailableModelInfo[];
+  nextRetryAt: number;
+  patterns?: string[];
+  settingsReady?: Promise<boolean>;
+  error?: string;
+}
+export interface CatalogSources {
+  cli(cwd: string, signal: AbortSignal): Promise<AvailableModelInfo[] | undefined>;
+  sdk(
+    cwd: string,
+    signal: AbortSignal,
+    settings: (patterns: string[]) => void,
+  ): Promise<AvailableModelInfo[]>;
 }
 
-const cacheByCwd = new Map<string, ModelCache>();
+/** Cache reads never start synchronous discovery or wait for a subprocess. */
+export class ModelCatalog {
+  private cache = new Map<string, ModelCache>();
+  private refreshes = new Map<string, Promise<AvailableModelInfo[]>>();
+  private probes = new Map<string, Promise<AvailableModelInfo[]>>();
+  private controller = new AbortController();
+  private active = 0;
+  private waiting: Array<() => void> = [];
+  constructor(
+    private sources: CatalogSources,
+    private now = Date.now,
+  ) {}
+  private state(cwd: string): ModelCache {
+    const key = resolve(cwd);
+    let state = this.cache.get(key);
+    if (!state) {
+      state = { loadedAt: 0, nextRetryAt: 0 };
+      this.cache.set(key, state);
+    }
+    return state;
+  }
+  has(cwd: string): boolean {
+    return this.state(cwd).models !== undefined;
+  }
+  stale(cwd: string): boolean {
+    const state = this.state(cwd);
+    return !state.models || this.now() - state.loadedAt >= CACHE_TTL_MS;
+  }
+  status(cwd: string): 'loading' | 'unavailable' | 'ready' | 'stale' {
+    const state = this.state(cwd);
+    if (state.models !== undefined) return this.stale(cwd) ? 'stale' : 'ready';
+    return state.error ? 'unavailable' : 'loading';
+  }
+  read(cwd: string): AvailableModelInfo[] {
+    return this.state(cwd).models ?? [];
+  }
+  selectable(cwd: string): AvailableModelInfo[] {
+    const state = this.state(cwd);
+    // Do not expose unscoped choices before project settings have been read.
+    if (!state.patterns) return [];
+    return state.patterns.length
+      ? resolveEnabledModelScope(state.patterns, state.models ?? [])
+      : (state.models ?? []);
+  }
+  async waitForSettings(cwd: string): Promise<void> {
+    const state = this.state(cwd);
+    let ready: Promise<boolean> | undefined;
+    do {
+      ready = state.settingsReady;
+      if (ready && !(await ready))
+        throw new Error('Model selection settings are temporarily unavailable. Try again.');
+    } while (ready !== state.settingsReady);
+    if (!state.patterns)
+      throw new Error('Model selection settings are temporarily unavailable. Try again.');
+  }
+  schedule(cwd: string): void {
+    const state = this.state(cwd);
+    if (this.stale(cwd) && this.now() >= state.nextRetryAt) void this.refresh(cwd).catch(() => {});
+  }
+  refresh(cwd: string): Promise<AvailableModelInfo[]> {
+    cwd = resolve(cwd);
+    const existing = this.refreshes.get(cwd);
+    if (existing) return existing;
+    const state = this.state(cwd);
+    const work = this.load(cwd, state).finally(() => this.refreshes.delete(cwd));
+    this.refreshes.set(cwd, work);
+    return work;
+  }
+  private async load(cwd: string, state: ModelCache): Promise<AvailableModelInfo[]> {
+    if (this.active >= 2) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    else this.active++;
+    let pendingProbe: Promise<AvailableModelInfo[]> | undefined;
+    try {
+      this.controller.signal.throwIfAborted();
+      let sdkModels: AvailableModelInfo[] | undefined;
+      // A new refresh needs new settings, even if a previous metadata probe
+      // is still finishing. Keep one SDK probe per cwd and retain the bound.
+      await this.probes.get(cwd)?.catch(() => {});
+      this.controller.signal.throwIfAborted();
+      let ready!: (available: boolean) => void;
+      state.settingsReady = new Promise<boolean>((resolve) => {
+        ready = resolve;
+      });
+      const probe = this.sources.sdk(cwd, this.controller.signal, (patterns) => {
+        state.patterns = patterns;
+        ready(true);
+      });
+      this.probes.set(cwd, probe);
+      void probe
+        .finally(() => {
+          ready(false);
+          this.probes.delete(cwd);
+        })
+        .catch(() => {});
+      void probe
+        .then((models) => {
+          sdkModels = models;
+          if (state.models) state.models = mergeModelMetadata(state.models, models);
+        })
+        .catch(() => {});
+      pendingProbe = probe;
+      const cli = await this.sources.cli(cwd, this.controller.signal).catch(() => undefined);
+      if (cli === undefined && state.models !== undefined)
+        throw new Error('CLI discovery failed; preserving the last successful catalog');
+      // Await the actual SDK fallback on a cold CLI failure; never cache a stub.
+      const models = cli ?? (await probe);
+      this.controller.signal.throwIfAborted();
+      state.models = mergeModelMetadata(models, sdkModels ?? []).sort((a, b) =>
+        a.ref.localeCompare(b.ref),
+      );
+      state.loadedAt = this.now();
+      state.error = undefined;
+      return state.models;
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        'Model discovery is temporarily unavailable. Try again after checking pi configuration.',
+        { cause: error },
+      );
+    } finally {
+      state.nextRetryAt = this.now() + CACHE_TTL_MS;
+      const release = () => {
+        const next = this.waiting.shift();
+        if (next) next();
+        else this.active--;
+      };
+      // CLI results may return early, but their SDK probe still consumes capacity.
+      if (pendingProbe) void pendingProbe.finally(release).catch(() => {});
+      else release();
+    }
+  }
+  async stop(): Promise<void> {
+    this.controller.abort();
+    await Promise.allSettled([...this.refreshes.values(), ...this.probes.values()]);
+  }
+}
 
+async function discoverCli(
+  cwd: string,
+  signal: AbortSignal,
+): Promise<AvailableModelInfo[] | undefined> {
+  const cliArgs = ['--list-models', ...config.piExtraFlags.split(/\s+/).filter(Boolean)];
+  const { bin, args } = await resolvePiSpawn(config.piBin, cliArgs);
+  const result = await runProcess(bin, args, { cwd, signal, timeoutMs: LIST_MODELS_TIMEOUT_MS });
+  return result.code === 0 && !result.error && !result.timedOut && !result.aborted
+    ? parsePiModelList(result.stdout)
+    : undefined;
+}
+async function discoverSdk(
+  cwd: string,
+  signal: AbortSignal,
+  settings: (patterns: string[]) => void,
+): Promise<AvailableModelInfo[]> {
+  const suffix = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  let models: AvailableModelInfo[] | undefined;
+  const result = await runProcess(
+    process.execPath,
+    [fileURLToPath(new URL(`./model-probe${suffix}`, import.meta.url))],
+    {
+      cwd,
+      signal,
+      timeoutMs: LIST_MODELS_TIMEOUT_MS,
+      onStdout: (chunk) => {
+        pending += decoder.write(chunk);
+        let newline: number;
+        while ((newline = pending.indexOf('\n')) >= 0) {
+          const line = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'settings' && Array.isArray(event.patterns))
+              settings(event.patterns);
+            if (event.type === 'models' && Array.isArray(event.models)) models = event.models;
+          } catch {
+            /* Ignore unrelated library output. */
+          }
+        }
+      },
+    },
+  );
+  if (result.code !== 0 || result.timedOut || result.aborted || result.error || !models) {
+    throw new Error(result.error || result.stderr.slice(0, 1000) || 'SDK model discovery failed');
+  }
+  return models;
+}
+
+const catalog = new ModelCatalog({ cli: discoverCli, sdk: discoverSdk });
 export interface ModelListOptions {
   forceRefresh?: boolean;
   allowStale?: boolean;
   cwd?: string;
 }
-
 export function listAvailableModels(options?: ModelListOptions): AvailableModelInfo[] {
-  return loadModelCatalog(
-    options?.forceRefresh ?? false,
-    options?.cwd ?? process.cwd(),
-    options?.allowStale ?? false,
-  ).models;
+  return catalog.read(options?.cwd ?? config.piCwd);
 }
-
 export function hasCachedModelCatalog(cwd: string): boolean {
-  return cacheByCwd.has(cwd);
+  return catalog.has(cwd);
 }
-
 export function isModelCatalogStale(cwd: string): boolean {
-  const cached = cacheByCwd.get(cwd);
-  return !cached || Date.now() - cached.loadedAt >= CACHE_TTL_MS;
+  return catalog.stale(cwd);
 }
-
-/**
- * Return the models exposed by pi's configured enabledModels scope.
- * An absent or empty scope preserves the existing all-available-models behavior.
- */
+export function getModelCatalogStatus(cwd: string): string {
+  return catalog.status(cwd);
+}
+export function scheduleCatalogRefresh(cwd: string): void {
+  catalog.schedule(cwd);
+}
+export function stopModelCatalog(): Promise<void> {
+  return catalog.stop();
+}
+export async function refreshModelCatalog(cwd = config.piCwd): Promise<AvailableModelInfo[]> {
+  try {
+    return await catalog.refresh(cwd);
+  } catch (err) {
+    logger.warn({ cwd, err }, 'Model catalog refresh failed');
+    throw err;
+  }
+}
 export async function listSelectableModels(
   options?: ModelListOptions,
 ): Promise<AvailableModelInfo[]> {
-  const cwd = options?.cwd ?? process.cwd();
-  const catalog = loadModelCatalog(
-    options?.forceRefresh ?? false,
-    cwd,
-    options?.allowStale ?? false,
-  );
-  const settingsManager = SettingsManager.create(cwd);
-  const patterns = settingsManager.getEnabledModels();
-
-  if (!patterns?.length) {
-    return catalog.models;
-  }
-
-  return resolveEnabledModelScope(patterns, catalog.models);
+  const cwd = options?.cwd ?? config.piCwd;
+  if (options?.forceRefresh || (!options?.allowStale && !catalog.has(cwd)))
+    await refreshModelCatalog(cwd);
+  if (!options?.allowStale) await catalog.waitForSettings(cwd);
+  return catalog.selectable(cwd);
 }
 
 export function resolveModelReference(
@@ -190,7 +381,7 @@ export function toModelChoiceName(model: AvailableModelInfo): string {
   return label.length > 100 ? `${label.slice(0, 97)}...` : label;
 }
 
-function resolveEnabledModelScope(
+export function resolveEnabledModelScope(
   patterns: string[],
   models: AvailableModelInfo[],
 ): AvailableModelInfo[] {
@@ -282,57 +473,6 @@ function addUniqueModel(models: AvailableModelInfo[], candidate: AvailableModelI
   }
 }
 
-function loadModelCatalog(forceRefresh: boolean, cwd: string, allowStale: boolean): ModelCache {
-  const now = Date.now();
-  const cached = cacheByCwd.get(cwd);
-
-  if (!forceRefresh && cached && (allowStale || now - cached.loadedAt < CACHE_TTL_MS)) {
-    return cached;
-  }
-
-  const authStorage = AuthStorage.create();
-  authStorage.reload();
-
-  const registry = createModelRegistry(authStorage);
-  registry.refresh();
-
-  const sdkModels = registry.getAvailable().map(toAvailableModelInfo);
-  const cliModels = listModelsFromPiCli(config.piBin, cwd);
-  const models = mergeModelMetadata(cliModels ?? sdkModels, sdkModels).sort((a, b) =>
-    a.ref.localeCompare(b.ref),
-  );
-
-  const refreshed = { loadedAt: now, cwd, models };
-  cacheByCwd.set(cwd, refreshed);
-  return refreshed;
-}
-
-function listModelsFromPiCli(piBin: string, cwd: string): AvailableModelInfo[] | undefined {
-  const cliArgs = ['--list-models'];
-
-  // Match the agent invocation so models registered by PI_EXTRA_FLAGS
-  // extensions are discovered too.
-  if (config.piExtraFlags) {
-    cliArgs.push(...config.piExtraFlags.split(/\s+/).filter(Boolean));
-  }
-
-  const { bin, args } = resolvePiSpawn(piBin, cliArgs);
-  const result = spawnSync(bin, args, {
-    cwd,
-    env: process.env,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 10 * 1024 * 1024,
-    timeout: LIST_MODELS_TIMEOUT_MS,
-  });
-
-  if (result.error || result.status !== 0 || !result.stdout) {
-    return undefined;
-  }
-
-  return parsePiModelList(result.stdout);
-}
-
 interface ModelTableHeader {
   providerIndex: number;
   modelIndex: number;
@@ -356,20 +496,25 @@ function findModelTableHeader(lines: string[]): ModelTableHeader | undefined {
   return undefined;
 }
 
-export function parsePiModelList(output: string): AvailableModelInfo[] {
+export function parsePiModelList(output: string): AvailableModelInfo[] | undefined {
   const lines = output
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
   const header = findModelTableHeader(lines);
-  if (!header) return [];
+  if (!header) {
+    return lines.some((line) => /^no (available )?models( available)?[.!]?(?:\s|$)/i.test(line))
+      ? []
+      : undefined;
+  }
 
   return lines.slice(header.rowsStart).flatMap((line) => {
     const columns = line.split(/\s+/);
     const provider = columns[header.providerIndex];
     const id = columns[header.modelIndex];
-    if (!provider || !id) return [];
+    if (!provider || !id || !['yes', 'no'].includes(columns[header.thinkingIndex]?.toLowerCase()))
+      return [];
 
     const reasoning = columns[header.thinkingIndex]?.toLowerCase() === 'yes';
     return [
@@ -402,30 +547,6 @@ function mergeModelMetadata(
         }
       : model;
   });
-}
-
-function createModelRegistry(authStorage: AuthStorage): ModelRegistry {
-  const registryClass = ModelRegistry as unknown as {
-    create?: (authStorage: AuthStorage) => ModelRegistry;
-    new (authStorage: AuthStorage): ModelRegistry;
-  };
-
-  if (typeof registryClass.create === 'function') {
-    return registryClass.create(authStorage);
-  }
-
-  return new registryClass(authStorage);
-}
-
-function toAvailableModelInfo(model: Model<any>): AvailableModelInfo {
-  return {
-    ref: `${model.provider}/${model.id}`,
-    provider: model.provider,
-    id: model.id,
-    name: model.name || model.id,
-    reasoning: Boolean(model.reasoning),
-    supportsXhigh: supportsModelXhigh(model),
-  };
 }
 
 function normalize(text: string): string {

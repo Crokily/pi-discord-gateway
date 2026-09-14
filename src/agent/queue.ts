@@ -1,11 +1,4 @@
-/**
- * Message processing loop.
- *
- * Polls SQLite for pending messages, dispatches to pi agent, sends response
- * back to Discord. Enforces per-channel serial processing and global
- * concurrency limit.
- */
-
+/** SQLite queue: execute each conversation serially; resume saved delivery only. */
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import {
@@ -17,295 +10,209 @@ import {
   recoverStuckMessages,
   logMessage,
   getChannel,
+  getQueuedMessage,
+  saveResponse,
+  setMessageState,
+  pendingNotices,
+  markNoticeSent,
+  postponeNotice,
 } from '../db.js';
 import { invokeAgent } from './invoke.js';
-import { sendResponse, setTyping } from '../discord/client.js';
+import { sendResponse, sendDurableResponse, setTyping } from '../discord/client.js';
+import { splitResponse } from '../discord/delivery.js';
+import { routeQueuedMessage } from '../discord/threads.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
+import type { QueuedMessage } from '../types.js';
 
-/** Channels currently being processed (per-channel serial lock) */
-const activeChannels = new Set<string>();
-const activeTaskPromises = new Set<Promise<void>>();
-const activeTaskControllers = new Map<number, AbortController>();
-const activeChannelControllers = new Map<string, AbortController>();
-
+const activeChannels = new Map<
+  string,
+  { controller: AbortController; promise: Promise<void>; rowid: number }
+>();
 let running = false;
 let pollTimer: NodeJS.Timeout | undefined;
-let stopPromise: Promise<void> | null = null;
+let stopPromise: Promise<void> | undefined;
+let notices: Promise<void> | undefined;
+let nextNoticeAt = 0;
 
 export function isChannelProcessing(jid: string): boolean {
   return activeChannels.has(jid);
 }
-
 export function abortChannelTask(jid: string): { aborted: boolean; cleared: number } {
-  const controller = activeChannelControllers.get(jid);
-  const aborted = Boolean(controller);
-  if (controller) {
-    controller.abort();
+  const active = activeChannels.get(jid);
+  if (active) {
+    setMessageState(active.rowid, 'cancelled');
+    active.controller.abort('user');
   }
-  const cleared = clearPendingMessages(jid);
-  return { aborted, cleared };
+  return { aborted: Boolean(active), cleared: clearPendingMessages(jid) };
 }
-
 export function startProcessingLoop(): void {
   if (running) return;
-
   running = true;
-  stopPromise = null;
-
-  // Recover any messages stuck in 'processing' from a previous crash.
-  const recovered = recoverStuckMessages();
-  if (recovered > 0) {
-    logger.info({ count: recovered }, 'Recovered stuck messages');
-  }
-
+  stopPromise = undefined;
+  const interrupted = recoverStuckMessages();
+  if (interrupted)
+    logger.warn({ interrupted }, 'Recorded interrupted tasks; execution will not be replayed');
   schedulePoll(0);
 }
-
-export function stopProcessingLoop(opts: { timeoutMs?: number } = {}): Promise<void> {
-  if (stopPromise) {
-    return stopPromise;
-  }
-
+export function stopProcessingLoop(options: { timeoutMs?: number } = {}): Promise<void> {
+  if (stopPromise) return stopPromise;
   running = false;
-  clearPollTimer();
-
-  stopPromise = drainActiveTasks(opts.timeoutMs ?? config.shutdownTimeoutMs);
-  return stopPromise;
-}
-
-function schedulePoll(delayMs = config.pollInterval): void {
-  if (!running || pollTimer) return;
-
-  pollTimer = setTimeout(() => {
-    pollTimer = undefined;
-    poll();
-  }, delayMs);
-}
-
-function clearPollTimer(): void {
-  if (!pollTimer) return;
   clearTimeout(pollTimer);
   pollTimer = undefined;
-}
-
-function poll(): void {
-  if (!running) return;
-
-  try {
-    dispatch();
-  } catch (err: any) {
-    logger.error({ err: err.message }, 'Poll error');
-  } finally {
-    schedulePoll();
-  }
-}
-
-function dispatch(): void {
-  if (activeTaskPromises.size >= config.maxConcurrency) return;
-
-  for (const jid of channelsWithPending()) {
-    if (activeChannels.has(jid)) continue;
-    if (activeTaskPromises.size >= config.maxConcurrency) break;
-
-    const msg = claimNextMessage(jid);
-    if (!msg) continue;
-
-    const controller = new AbortController();
-    activeChannels.add(jid);
-    activeTaskControllers.set(msg.rowid, controller);
-    activeChannelControllers.set(jid, controller);
-
-    const taskPromise = processMessage(
-      jid,
-      msg.rowid,
-      msg.sender_name,
-      msg.content,
-      controller.signal,
-      msg.attachments,
-    ).finally(() => {
-      activeChannels.delete(jid);
-      activeTaskControllers.delete(msg.rowid);
-      activeChannelControllers.delete(jid);
-      activeTaskPromises.delete(taskPromise);
-
-      if (running) {
-        schedulePoll(0);
-      }
-    });
-
-    activeTaskPromises.add(taskPromise);
-  }
-}
-
-async function drainActiveTasks(timeoutMs: number): Promise<void> {
-  if (activeTaskPromises.size === 0) {
-    return;
-  }
-
-  const initialDrain = Promise.allSettled([...activeTaskPromises]);
-  const drainedGracefully = await waitForPromise(initialDrain, timeoutMs);
-  if (drainedGracefully) {
-    return;
-  }
-
-  logger.warn(
-    { timeoutMs, activeTasks: activeTaskPromises.size },
-    'Shutdown timeout reached; aborting in-flight message processing',
-  );
-
-  for (const controller of activeTaskControllers.values()) {
-    controller.abort();
-  }
-
-  if (activeTaskPromises.size > 0) {
+  stopPromise = (async () => {
+    let timer: NodeJS.Timeout | undefined;
+    const all = Promise.allSettled([...activeChannels.values()].map((task) => task.promise));
     await Promise.race([
-      Promise.allSettled([...activeTaskPromises]),
-      new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
-    ]);
-  }
-}
-
-async function waitForPromise(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  if (timeoutMs === 0) {
-    return false;
-  }
-
-  let timer: NodeJS.Timeout | undefined;
-
-  try {
-    await Promise.race([
-      promise,
-      new Promise((resolve) => {
-        timer = setTimeout(resolve, timeoutMs);
+      all,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, options.timeoutMs ?? config.shutdownTimeoutMs);
       }),
     ]);
-  } finally {
     if (timer) clearTimeout(timer);
-  }
-
-  return activeTaskPromises.size === 0;
+    for (const active of activeChannels.values()) active.controller.abort('shutdown');
+    // All process and delivery operations have their own bounds. Drain before closing SQLite.
+    await all;
+    await notices;
+  })();
+  return stopPromise;
 }
-
-async function processMessage(
-  jid: string,
-  rowid: number,
-  senderName: string,
-  content: string,
-  signal: AbortSignal,
-  attachments?: string | null,
-): Promise<void> {
+function schedulePoll(delay = config.pollInterval): void {
+  if (!running || pollTimer) return;
+  pollTimer = setTimeout(() => {
+    pollTimer = undefined;
+    try {
+      dispatch();
+    } catch (err) {
+      logger.error({ err }, 'Queue dispatch failed');
+    }
+    schedulePoll();
+  }, delay);
+}
+function dispatch(): void {
+  if (!running) return;
+  if (!notices && Date.now() >= nextNoticeAt) {
+    nextNoticeAt = Date.now() + 30_000;
+    notices = (async () => {
+      for (const notice of pendingNotices()) {
+        if (!running) break;
+        if (await sendResponse(notice.channel_jid, `⚠️ ${notice.notice_text}`))
+          markNoticeSent(notice.rowid);
+        else postponeNotice(notice.rowid);
+      }
+    })()
+      .catch((err) => logger.warn({ err }, 'Task notices could not be delivered'))
+      .finally(() => {
+        notices = undefined;
+      });
+  }
+  for (const jid of channelsWithPending()) {
+    if (activeChannels.size >= config.maxConcurrency) break;
+    if (activeChannels.has(jid)) continue;
+    const message = claimNextMessage(jid);
+    if (!message) continue;
+    const controller = new AbortController();
+    const promise = processMessage(message, controller.signal)
+      .catch((err) => {
+        logger.error({ err, rowid: message.rowid }, 'Task processing failed');
+        const status = getQueuedMessage(message.rowid)?.status;
+        if (status === 'processing')
+          markMessageFailed(
+            message.rowid,
+            `Internal error: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`,
+          );
+        if (status === 'delivering')
+          setMessageState(
+            message.rowid,
+            'delivery_failed',
+            `Delivery failed; the answer is saved. Use piscord result ${message.rowid}.`,
+          );
+      })
+      .finally(() => {
+        activeChannels.delete(jid);
+        nextNoticeAt = 0;
+        schedulePoll(0);
+      });
+    activeChannels.set(jid, { promise, controller, rowid: message.rowid });
+  }
+}
+async function processMessage(message: QueuedMessage, signal: AbortSignal): Promise<void> {
+  const jid = message.channel_jid;
   const channel = getChannel(jid);
-  if (!channel) {
-    logger.warn({ jid }, 'Channel disappeared during processing');
-    markMessageFailed(rowid);
+  if (!channel || channel.deletedAt) {
+    markMessageFailed(message.rowid, 'The destination channel is no longer available.');
     return;
   }
-
-  logger.info({ jid, senderName, len: content.length }, 'Processing message');
-
-  const typingLoop = createTypingLoop(jid);
-
-  try {
-    const prompt = `[Discord user: ${senderName}]\n${content}`;
-
-    logMessage(jid, 'user', content);
-
-    const effective = computeEffectiveChannelSettings(channel);
-
-    const result = await invokeAgent(channel.folder, prompt, {
-      model: effective.rawModelRef || undefined,
-      thinking: effective.hasManagedThinking ? effective.effectiveThinking : undefined,
-      cwd: effective.effectiveCwd,
-      signal,
-      attachments,
-    });
-
-    if (signal.aborted) {
-      markMessageFailed(rowid);
-      logger.info({ jid, rowid }, 'Message abandoned: shutdown interrupted processing');
-      return;
+  if (message.status === 'routing') {
+    try {
+      await routeQueuedMessage(message, signal);
+    } catch (err) {
+      logger.warn({ err, rowid: message.rowid }, 'Thread creation failed');
+      if (!signal.aborted)
+        markMessageFailed(
+          message.rowid,
+          `Could not open a conversation thread for task #${message.rowid}. The task has not run. Check thread permissions and try again.`,
+        );
     }
-
-    if (result.ok) {
-      const sent = await sendResponse(jid, result.text);
-      if (!sent) {
-        markMessageFailed(rowid);
-        logger.warn({ jid }, 'Agent response generated but could not be delivered to Discord');
+    return;
+  }
+  const typing = createTypingLoop(jid);
+  try {
+    if (message.status === 'processing') {
+      const effective = computeEffectiveChannelSettings(channel);
+      logMessage(jid, 'user', message.content);
+      const result = await invokeAgent(
+        channel.folder,
+        `[Discord user: ${message.sender_name}]\n${message.content}`,
+        {
+          model: effective.rawModelRef || undefined,
+          thinking: effective.hasManagedThinking ? effective.effectiveThinking : undefined,
+          cwd: effective.effectiveCwd,
+          signal,
+          attachments: message.attachments,
+        },
+      );
+      if (signal.aborted) {
+        if (signal.reason !== 'user')
+          setMessageState(
+            message.rowid,
+            'interrupted',
+            'The gateway stopped during this task. Some operations may have completed; check before submitting it again.',
+          );
         return;
       }
-
-      logMessage(jid, 'assistant', result.text);
-      markMessageDone(rowid);
-      logger.info({ jid, responseLen: result.text.length }, 'Message processed');
-      return;
+      if (!result.ok) {
+        markMessageFailed(
+          message.rowid,
+          result.reason === 'timeout'
+            ? result.error
+            : `Agent error: ${result.error?.slice(0, 300) || 'unknown error'}`,
+        );
+        logger.warn({ rowid: message.rowid, error: result.error }, 'Agent returned an error');
+        return;
+      }
+      saveResponse(message.rowid, result.text, splitResponse(result.text));
     }
-
-    const errMsg = `⚠️ Agent error: ${result.error?.slice(0, 300) || 'unknown error'}`;
-    await sendResponse(jid, errMsg);
-    markMessageFailed(rowid);
-    logger.warn({ jid, error: result.error }, 'Agent returned error');
-  } catch (err: any) {
-    if (signal.aborted) {
-      markMessageFailed(rowid);
-      logger.info({ jid, rowid }, 'Message abandoned: shutdown interrupted processing');
-      return;
-    }
-
-    logger.error({ jid, err: err.message }, 'processMessage failed');
-    markMessageFailed(rowid);
-    try {
-      await sendResponse(jid, `⚠️ Internal error: ${err.message?.slice(0, 200)}`);
-    } catch {
-      // Nothing else to do here.
+    if (await sendDurableResponse(message.rowid, signal)) {
+      const saved = getQueuedMessage(message.rowid);
+      if (saved?.response_text) logMessage(jid, 'assistant', saved.response_text);
+      markMessageDone(message.rowid);
     }
   } finally {
-    await typingLoop.stop();
+    typing.stop();
   }
 }
-
-function createTypingLoop(jid: string): { stop: () => Promise<void> } {
-  let typingAlive = true;
-  let cancelTypingDelay = () => {};
-
-  const loop = (async () => {
-    while (typingAlive) {
-      await setTyping(jid);
-      if (!typingAlive) break;
-
-      const delay = cancellableSleep(8000);
-      cancelTypingDelay = delay.cancel;
-      await delay.promise;
-      cancelTypingDelay = () => {};
-    }
-  })();
-
-  return {
-    stop: async () => {
-      typingAlive = false;
-      cancelTypingDelay();
-      await loop;
-    },
+function createTypingLoop(jid: string): { stop(): void } {
+  let inFlight = false;
+  const tick = () => {
+    if (inFlight) return;
+    inFlight = true;
+    void setTyping(jid)
+      .catch(() => {})
+      .finally(() => {
+        inFlight = false;
+      });
   };
-}
-
-function cancellableSleep(ms: number): { promise: Promise<void>; cancel: () => void } {
-  let finished = false;
-  let timer: NodeJS.Timeout | undefined;
-  let resolvePromise: () => void = () => {};
-
-  const promise = new Promise<void>((resolve) => {
-    resolvePromise = () => {
-      if (finished) return;
-      finished = true;
-      if (timer) clearTimeout(timer);
-      resolve();
-    };
-
-    timer = setTimeout(resolvePromise, ms);
-  });
-
-  return {
-    promise,
-    cancel: resolvePromise,
-  };
+  tick();
+  const timer = setInterval(tick, 8_000);
+  return { stop: () => clearInterval(timer) };
 }

@@ -8,14 +8,17 @@
 
 import {
   Client,
+  ChannelType,
   Events,
   GatewayIntentBits,
   Partials,
+  REST,
+  Routes,
   type Interaction,
   type Message,
   type TextChannel,
-  type DMChannel,
 } from 'discord.js';
+import { handleThreadDeleted, registerIncomingThread, setThreadTransport } from './threads.js';
 import { type RegisteredChannel } from '../types.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -24,6 +27,7 @@ import {
   getChannel,
   registerChannel as dbRegisterChannel,
   enqueueMessage,
+  isRoutingThread,
 } from '../db.js';
 import {
   buildAttachmentOnlyPrompt,
@@ -31,12 +35,21 @@ import {
   type AttachmentMeta,
 } from './attachments.js';
 import { handleAutocomplete, handleChatCommand, registerGlobalCommands } from './slash-commands.js';
+import { deliverResponse, splitResponse, type DeliveryTransport } from './delivery.js';
 
 let client: Client | null = null;
 let triggerPattern: RegExp;
 let botId: string;
+let deliveryRest: REST | undefined;
 
 export async function startDiscord(): Promise<void> {
+  // The persisted delivery queue owns the retry budget for outbound answers.
+  deliveryRest = new REST({
+    version: '10',
+    retries: 0,
+    timeout: 10_000,
+    rejectOnRateLimit: () => true,
+  }).setToken(config.discordToken);
   client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -48,7 +61,24 @@ export async function startDiscord(): Promise<void> {
     partials: [Partials.Channel],
   });
 
-  client.on(Events.MessageCreate, handleMessage);
+  client.on(Events.MessageCreate, (message) => {
+    void handleMessage(message).catch((err) => logger.error({ err }, 'Message reception failed'));
+  });
+  client.on(Events.ThreadDelete, (thread) => handleThreadDeleted(thread.id));
+  setThreadTransport({
+    get: getThreadInfo,
+    create: async (parentId, anchorId, name) => {
+      const parent = (await deliveryRest!.get(Routes.channel(parentId))) as {
+        default_auto_archive_duration?: number;
+      };
+      const thread = (await deliveryRest!.post(Routes.threads(parentId, anchorId), {
+        body: { name, auto_archive_duration: parent.default_auto_archive_duration ?? 1440 },
+      })) as RawThread;
+      return threadInfo(thread);
+    },
+    sendAnchor: deliveryTransport.send,
+    findAnchor: deliveryTransport.find,
+  });
   client.on(Events.InteractionCreate, handleInteraction);
   client.on(Events.Error, (err) => logger.error({ err: err.message }, 'Discord client error'));
 
@@ -100,8 +130,8 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
 }
 
 async function handleMessage(message: Message): Promise<void> {
-  // Ignore bot messages
-  if (message.author.bot) return;
+  // System notices (including ThreadCreated) are not user prompts.
+  if (message.author.bot || message.system) return;
 
   const isDM = !message.guild;
   const channelId = message.channelId;
@@ -166,19 +196,26 @@ async function handleMessage(message: Message): Promise<void> {
     }
   }
 
-  // Reply context
-  if (message.reference?.messageId) {
-    try {
-      const ref = await message.channel.messages.fetch(message.reference.messageId);
-      const refAuthor = ref.member?.displayName || ref.author.displayName || ref.author.username;
-      content = `[Reply to ${refAuthor}] ${content}`;
-    } catch {
-      // deleted message
-    }
-  }
-
   // ── Channel registration check ──
   let channel = getChannel(jid);
+  if (channel?.deletedAt) return;
+  if (message.channel.isThread() && message.channel.parentId) {
+    const parentId = message.channel.parentId;
+    if (
+      !channel &&
+      (config.excludedChannels.has(channelId) || config.excludedChannels.has(parentId))
+    )
+      return;
+    const managed = isRoutingThread(channelId);
+    if (!channel && config.channelPolicy === 'allowlist' && !managed) return;
+    channel = registerIncomingThread(
+      jid,
+      message.channel.name,
+      parentId,
+      channel,
+      managed ? false : config.channelPolicy !== 'open',
+    );
+  }
 
   // Auto-register DMs
   if (!channel && isDM && config.autoRegisterDMs) {
@@ -230,6 +267,17 @@ async function handleMessage(message: Message): Promise<void> {
   }
   if (!content) return;
 
+  // Reply context
+  if (message.reference?.messageId) {
+    try {
+      const ref = await message.channel.messages.fetch(message.reference.messageId);
+      const refAuthor = ref.member?.displayName || ref.author.displayName || ref.author.username;
+      content = `[Reply to ${refAuthor}] ${content}`;
+    } catch {
+      // deleted message
+    }
+  }
+
   // ── Enqueue ──
   enqueueMessage({
     channelJid: jid,
@@ -238,6 +286,8 @@ async function handleMessage(message: Message): Promise<void> {
     content,
     timestamp,
     attachments: attachmentsJson,
+    sourceMessageId: message.id,
+    routeThread: !message.channel.isThread() && channel.threadMode === 'auto',
   });
   logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
@@ -249,25 +299,13 @@ const DISCORD_MAX_LENGTH = 2000;
 export async function sendResponse(jid: string, text: string): Promise<boolean> {
   if (!client) return false;
 
-  const channelId = jid.replace(/^dc:/, '');
-
   try {
-    const channel = await client.channels.fetch(channelId);
-    if (!channel || !('send' in channel)) {
-      logger.warn({ jid }, 'Channel not found or not text-based');
-      return false;
-    }
-
-    const textChannel = channel as TextChannel | DMChannel;
-
-    if (text.length <= DISCORD_MAX_LENGTH) {
-      await textChannel.send(text);
-    } else {
-      // Split at line boundaries when possible
-      const chunks = splitMessage(text, DISCORD_MAX_LENGTH);
-      for (const chunk of chunks) {
-        await textChannel.send(chunk);
-      }
+    for (const chunk of splitResponse(text, DISCORD_MAX_LENGTH)) {
+      await deliveryTransport.send(
+        jid,
+        chunk,
+        crypto.randomUUID().replaceAll('-', '').slice(0, 24),
+      );
     }
     logger.info({ jid, length: text.length }, 'Response sent');
     return true;
@@ -275,6 +313,27 @@ export async function sendResponse(jid: string, text: string): Promise<boolean> 
     logger.error({ jid, err: err.message }, 'Failed to send message');
     return false;
   }
+}
+
+export const deliveryTransport: DeliveryTransport = {
+  async send(jid, content, nonce) {
+    if (!deliveryRest) throw new Error('Discord is not connected');
+    const message = (await deliveryRest.post(Routes.channelMessages(jid.replace(/^dc:/, '')), {
+      body: { content, nonce, enforce_nonce: true },
+    })) as { id: string };
+    return message.id;
+  },
+  async find(jid, nonce) {
+    if (!deliveryRest) return undefined;
+    const messages = (await deliveryRest.get(Routes.channelMessages(jid.replace(/^dc:/, '')), {
+      query: new URLSearchParams({ limit: '100' }),
+    })) as Array<{ id: string; nonce?: string; author: { id: string } }>;
+    return messages.find((message) => message.author.id === botId && message.nonce === nonce)?.id;
+  },
+};
+
+export function sendDurableResponse(rowid: number, signal: AbortSignal): Promise<boolean> {
+  return deliverResponse(rowid, deliveryTransport, signal);
 }
 
 export async function setTyping(jid: string): Promise<void> {
@@ -304,19 +363,28 @@ export function getBotTag(): string | undefined {
 
 // ── Helpers ──
 
-function splitMessage(text: string, max: number): string[] {
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > max) {
-    // Try to split at last newline within limit
-    let splitAt = remaining.lastIndexOf('\n', max);
-    if (splitAt <= 0) splitAt = max; // hard split if no newline
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt).replace(/^\n/, '');
-  }
-  if (remaining) chunks.push(remaining);
-  return chunks;
+interface RawThread {
+  id: string;
+  name?: string;
+  type: number;
+  parent_id?: string;
+}
+function threadInfo(channel: RawThread) {
+  return {
+    id: channel.id,
+    name: channel.name ?? 'Pi conversation',
+    parentId: channel.parent_id,
+    isThread: [
+      ChannelType.PublicThread,
+      ChannelType.PrivateThread,
+      ChannelType.AnnouncementThread,
+    ].includes(channel.type),
+    textParent: channel.type === ChannelType.GuildText,
+  };
+}
+async function getThreadInfo(id: string) {
+  if (!deliveryRest) throw new Error('Discord is not connected');
+  return threadInfo((await deliveryRest.get(Routes.channel(id))) as RawThread);
 }
 
 function escapeRegExp(text: string): string {

@@ -12,6 +12,10 @@ export interface RegisteredChannel {
   modelOverride: string;
   thinkingOverride: ThinkingLevel | '';
   cwdOverride: string;
+  parentJid?: string;
+  threadMode?: 'off' | 'auto';
+  managedThread?: boolean;
+  deletedAt?: string;
 }
 
 /** Queued message row from SQLite */
@@ -22,7 +26,24 @@ export interface QueuedMessage {
   sender_name: string;
   content: string;
   timestamp: string;
-  status: 'pending' | 'processing' | 'done' | 'failed';
+  status:
+    | 'pending'
+    | 'routing'
+    | 'processing'
+    | 'delivering'
+    | 'done'
+    | 'failed'
+    | 'interrupted'
+    | 'cancelled'
+    | 'delivery_failed'
+    | 'delivery_uncertain';
+  source_message_id: string | null;
+  origin_jid: string | null;
+  route_thread: number;
+  anchor_message_id: string | null;
+  response_text: string | null;
+  delivery_attempts: number;
+  next_attempt_at: number;
   /** JSON array of attachment metadata, or null */
   attachments: string | null;
 }
@@ -32,4 +53,5 @@ export interface AgentResult {
   ok: boolean;
   text: string;
   error?: string;
+  reason?: 'cancelled' | 'timeout';
 }

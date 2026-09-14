@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Require Node.js >=22.19.0 and pi >=0.83.0 <0.86.0; develop against pi 0.85.1. Setup and startup diagnose unsupported dependencies before loading the runtime.
+- Model discovery is asynchronous, cached by working directory, and bounded in concurrency and duration. CLI failures retain stale data; cold failures await an initialized SDK fallback. Valid empty lists and discovery errors are distinct.
+- Restart recovery retains pending work and resumes persisted answer delivery. Tasks interrupted during execution are reported instead of automatically rerun.
+
+### Added
+
+- Per-channel opt-in automatic conversation threads via `/pi threads` or `piscord threads <id> on|off`, with independent sessions and dynamic parent model/thinking/cwd inheritance. User questions and schedules share routing. Thread deletion cancels pending work, disables schedules and archives sessions for retention cleanup.
+- `/pi reset-thinking` restores inherited/default thinking settings.
+- Persisted answer chunks, bounded delivery retries and reconciliation of uncertain sends. `piscord result <task-id>` reads a saved answer without executing the task again.
+- A gateway instance lock and per-invocation process supervision. `AGENT_TIMEOUT_MS` optionally limits task duration; the default remains unlimited.
+- Real pi compatibility smoke tests using an isolated configuration and local HTTP model, including CLI discovery, SDK fallback, extension discovery and session continuation. Additional regression coverage exercises process death, cancellation races, delivery recovery and thread permission boundaries.
+
+### Fixed
+
+- Forced model selection refreshes wait for current project scope settings instead of reusing a previous `enabledModels` list.
+- Setup and startup validate the configured `PI_BIN --version` as well as the installed SDK peer versions, with a bounded executable probe.
+- Shutdown stops queue dispatch and starts its grace period before waiting on thread-maintenance requests.
+- Replacing a host or container while retaining its database volume no longer leaves startup permanently blocked by an old hostname; renewable locks still prevent concurrent ownership.
+- Windows pi discovery resolves explicit npm `.cmd` paths to their Node entry point instead of attempting to spawn the command script directly.
+- Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.
+- Late Discord request failures preserve explicit task cancellation instead of replacing it with a delivery error.
+- New pi releases no longer fail on the removed AuthStorage export or obsolete ModelRegistry initialization.
+- Reply metadata no longer hides an explicit bot mention from trigger matching.
+- Cancellation, shutdown and timeout clean up process listeners and timers; stopped tasks are not revived on restart.
+
+### Acknowledgements
+
+- @philipstray for the ModelRuntime diagnosis and migration proposal in #15; reporters of #14 and #16.
+- @jolo-dev for #12 and @chhotu-claw for the original auto-threading proposal in #7.
+- @Malaga82's fork informed the investigation of discovery, process limits, instance locking and delivery failure handling. These changes implement the agreed recovery semantics independently.
+
 ## [1.7.0] - 2026-07-17
 
 ### Changed

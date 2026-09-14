@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-blue" alt="platform">
 </p>
 
-A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). SQLite-backed queue, per-channel session isolation, crash recovery, abort support. One command to set up, runs as a daemon, never drops a message.
+A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). SQLite-backed queue, per-channel session isolation, crash recovery, abort support. One command to set up, runs as a daemon, and keeps task and delivery state across restarts.
 
 **Latest release:** see the npm version badge above and [Changelog](./CHANGELOG.md) for details.
 
@@ -24,9 +24,9 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 
 ## Prerequisites
 
-- **Node.js** ≥ 20
+- **Node.js** ≥ 22.19.0
 - **Linux, macOS, or Windows**
-- **[pi](https://github.com/badlogic/pi-mono)** ≥ 0.74.0 installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
+- **[pi](https://github.com/earendil-works/pi)** ≥ 0.83.0 and < 0.86.0 installed and on `PATH` (recommended: 0.85.1), with a configured provider
 - **Discord bot token** — [create one here](https://discord.com/developers/applications)
   - Enable **Message Content Intent** under Privileged Gateway Intents
   - Bot permissions: `Send Messages`, `Read Message History`, `View Channels`, `Attach Files`
@@ -34,10 +34,11 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 ## Features
 
 - **Bridges to your existing `pi`** — shells out to the `pi` binary and reuses your login + model access
+- **Optional conversation threads** — enable per parent channel; each question gets an isolated conversation with inherited settings
 - **Per-channel sessions** — each Discord channel gets its own persistent conversation history
 - **Per-channel working directories** — optionally override `PI_CWD` for specific channels without changing the global default
 - **Channel access policy** — `open` (all channels), `open-trigger` (all channels, @mention required), or `allowlist` (manual registration only)
-- **SQLite message queue** — survives crashes, auto-recovers stuck messages
+- **SQLite message queue** — resumes pending work and saved answers; reports interrupted execution without replaying it
 - **Concurrency control** — per-channel serial processing + configurable global limit
 - **DM auto-registration** — direct messages work out of the box
 - **Discord slash commands** — `/pi status`, `/pi model`, `/pi thinking`, `/pi new`, `/pi stop`
@@ -65,8 +66,8 @@ The gateway **does not embed or replace `pi`**. It finds and runs your installed
 
 1. **Binary discovery** — uses `PI_BIN` config or finds `pi` in `PATH`
 2. **Auth reuse** — `pi` reads its own `~/.pi/agent/auth.json` when invoked
-3. **Model catalog** — the gateway imports the pi SDK to populate slash command autocomplete
-4. **Invocation** — each message is processed as `pi --session-dir <dir> --continue -p <message>`
+3. **Model catalog** — cached results from asynchronous CLI discovery; a bounded, short-lived SDK probe supplies metadata and fallback models
+4. **Invocation** — each message is processed as `pi --session-dir <dir> --continue -p <message>`; a short-lived supervisor terminates owned processes if the gateway exits
 
 ## Channel Policy
 
@@ -94,16 +95,55 @@ Re-running `piscord register` with `--cwd` updates that channel's working direct
 
 The gateway registers a global `/pi` command on Discord:
 
-| Subcommand        | Description                                                        |
-| ----------------- | ------------------------------------------------------------------ |
-| `/pi status`      | Show model, thinking, working directory, session info, token usage |
-| `/pi model`       | Set the channel's model (autocomplete from pi's available models)  |
-| `/pi reset-model` | Clear the channel's model override                                 |
-| `/pi thinking`    | Set thinking level: off / minimal / low / medium / high / xhigh    |
-| `/pi new`         | Start a fresh session for this channel                             |
-| `/pi stop`        | Abort the current task and clear queued messages                   |
+| Subcommand                 | Description                                                        |
+| -------------------------- | ------------------------------------------------------------------ |
+| `/pi status`               | Show model, thinking, working directory, session info, token usage |
+| `/pi model`                | Set the channel's model (autocomplete from pi's available models)  |
+| `/pi reset-model`          | Clear the channel's model override                                 |
+| `/pi reset-thinking`       | Clear the thinking override and inherit the default again          |
+| `/pi threads enabled:true` | Enable automatic conversation threads in this parent channel       |
+| `/pi thinking`             | Set thinking level: off / minimal / low / medium / high / xhigh    |
+| `/pi new`                  | Start a fresh session for this channel                             |
+| `/pi stop`                 | Abort the current task and clear queued messages                   |
 
 `/pi model` reads the catalog from the configured `PI_BIN`, so it stays in sync when pi adds or removes models. It also honors pi's `enabledModels` setting (configured through `/scoped-models`), including model order and glob patterns. If no scope is configured, it shows all available models.
+
+## Conversation Threads
+
+Automatic thread creation is **off by default**, including after an upgrade. Enable it in a registered server text channel with `/pi threads enabled:true` (requires Manage Channels), or locally:
+
+```bash
+piscord threads 123456789012345678 on
+piscord threads 123456789012345678 off
+```
+
+The bot needs **Create Public Threads** and **Send Messages in Threads**. A question that meets the parent's normal trigger rules opens a thread on that user message. The question and its attachments enter a new pi session; continue inside the thread without mentioning the bot again. A new question in the parent starts another conversation. The parent conversation's history is not copied.
+
+Threads inherit model, thinking and working-directory settings from their parent, unless individually overridden. Parent changes apply to subsequent tasks. `/pi reset-model` and `/pi reset-thinking` restore inheritance; `/pi new` and `/pi stop` affect only the current thread. Disabling automatic threads preserves existing conversations.
+
+Manually created threads remain usable under the channel policy. In `allowlist` mode, register a manual thread separately. Their settings inherit from a registered parent once the thread is recognized. Automatically created threads are registered by the gateway.
+
+Scheduled prompts directed to an enabled parent channel create a brief starter message and use the same thread routing. Schedules directed to an existing thread continue there. Creation failures are reported before pi runs. Archived threads keep their sessions and can continue when Discord permits; locked or inaccessible threads may fail delivery. Deleted threads cancel pending work and disable their schedules. Their session folders are archived after active work drains, then cleaned using `ARCHIVE_RETENTION_DAYS`. Reconciliation also checks for deletion missed while the gateway was offline.
+
+## Task Recovery and Delivery
+
+Stop the running gateway before upgrading. The database migration preserves existing channels, settings, sessions and pending messages. pi 0.74 is no longer supported; upgrade Node and pi together before starting this version. Setup and startup verify both the installed SDK peers and the executable selected by `PI_BIN` (or `PATH`); a missing, unsupported or unresponsive executable fails preflight.
+
+| State at restart                  | Behavior                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------- |
+| Waiting to execute                | Continues in queue                                                                          |
+| Thread routing, before execution  | Resumes routing using the saved starter message                                             |
+| Execution started, result unknown | Marked interrupted; a notice asks you to check completed operations before submitting again |
+| Answer saved, delivery incomplete | Continues sending the saved answer, without rerunning pi                                    |
+| Explicitly stopped or timed out   | Remains stopped                                                                             |
+
+Answers are saved before sending. Temporary delivery failures have a bounded retry budget; confirmed chunks are skipped. Recent ambiguous sends use Discord's nonce deduplication and message lookup. If an older send cannot be confirmed, automatic delivery stops to avoid duplicates. Permission failures also stop retrying. You can read the saved answer locally with `piscord result <task-id>`; task notices include the ID. Already transmitted messages are not removed by `/pi stop`.
+
+Only one gateway may own a database. A second instance exits with a diagnostic. After a crash, the lock can take 30 seconds to expire; an owner that is still alive is never displaced merely because its heartbeat is old. Use a local filesystem for the SQLite database and lock files.
+
+`AGENT_TIMEOUT_MS` sets a total pi invocation limit, with `0` (the default) preserving unlimited long tasks. Timeout and cancellation terminate the invocation and its owned subprocesses. Quiet stdout does not trigger a timeout. During shutdown, the gateway first allows `SHUTDOWN_TIMEOUT_MS` for active tasks, then aborts them and drains bounded process/delivery operations before closing the database.
+
+Model discovery runs in the background and never delays a normal message for a catalog refresh. Autocomplete can briefly show an old list or no choices while loading. `/pi status` distinguishes loading, unavailable and stale catalogs. Explicit model changes wait for discovery and report unavailable discovery separately from a missing model.
 
 ## Tools for Pi
 
@@ -204,11 +244,12 @@ Most users won't need to edit this file directly — `piscord setup` generates i
 | `PI_CWD`                     | `$HOME`                         | Default working directory for pi; can be overridden per registered channel |
 | `PI_EXTRA_FLAGS`             | _(none)_                        | Extra flags passed to pi                                                   |
 | `TRIGGER_NAME`               | `pi`                            | Bot trigger name for @mentions                                             |
-| `CHANNEL_POLICY`             | `open`                          | Channel access: `open`, `open-trigger`, or `allowlist`                     |
+| `CHANNEL_POLICY`             | `allowlist`                     | Channel access: `open`, `open-trigger`, or `allowlist`                     |
 | `EXCLUDED_CHANNELS`          | _(none)_                        | Comma-separated channel IDs to exclude from auto-registration              |
 | `MAX_CONCURRENCY`            | `3`                             | Max parallel pi invocations                                                |
 | `MAX_SCHEDULED_CONCURRENCY`  | `1`                             | Max scheduled tasks enqueued per tick                                      |
 | `POLL_INTERVAL_MS`           | `1000`                          | Queue poll interval (ms)                                                   |
+| `AGENT_TIMEOUT_MS`           | `0`                             | Total pi invocation limit in ms (0 = unlimited)                            |
 | `SHUTDOWN_TIMEOUT_MS`        | `15000`                         | Graceful shutdown timeout (ms)                                             |
 | `AUTO_REGISTER_DMS`          | `true`                          | Auto-register DM channels                                                  |
 | `ARCHIVE_RETENTION_DAYS`     | `30`                            | Days to keep archived sessions (0 = never clean)                           |
@@ -231,6 +272,8 @@ piscord status                                Show diagnostics
 piscord channels                              List registered channels
 piscord register <id> <name> [options]        Register a channel
 piscord unregister <id>                       Unregister a channel
+piscord threads <channel-id> <on|off>          Configure automatic conversation threads
+piscord result <task-id>                       Read a saved answer without rerunning pi
 
 piscord send --channel <jid> [--text <msg>] [--file <path> ...]
 
@@ -328,7 +371,11 @@ npm install
 npm run dev          # Start with tsx (no build needed)
 npm run build        # Compile TypeScript
 npm test             # Run Vitest suite
+npm run typecheck    # Check source and test types
+npm run test:compat  # Exercise installed pi with an isolated local model fixture
 ```
+
+See [maintenance validation](./docs/maintenance-validation.md) for the current regression coverage and [release instructions](./CONTRIBUTING.md#releasing) for the npm publishing process. Merging a PR does not publish a package; publishing is triggered by a version tag.
 
 ## Security
 
@@ -343,22 +390,23 @@ MIT
 
 ## Version History
 
-| Version | Date       | Changes                                                     |
-| ------- | ---------- | ----------------------------------------------------------- |
-| 1.7.0   | 2026-07-17 | `/pi model` syncs with pi's catalog and `enabledModels`     |
-| 1.6.1   | 2026-06-15 | Fixed README version metadata                               |
-| 1.6.0   | 2026-06-15 | Path-based attachment relay and clearer empty-output errors |
-| 1.5.3   | 2026-05-19 | Fix ESM peer-dep check, cross-platform test fixes           |
-| 1.5.1   | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package      |
-| 1.5.0   | 2026-05-15 | Cross-platform support (macOS, Windows), launchd, new deps  |
-| 1.4.3   | 2026-05-03 | Compatibility with older pi-ai thinking APIs                |
-| 1.4.2   | 2026-04-06 | Fixed default XDG data directory mismatch                   |
-| 1.4.1   | 2026-04-06 | Fixed text-only sends via piscord send                      |
-| 1.4.0   | 2026-04-06 | Added per-channel working directories                       |
-| 1.3.0   | 2026-04-04 | Improved setup UX, faster install                           |
-| 1.2.0   | 2026-04-04 | Added channel policy, abort, scheduler, send-file           |
-| 1.1.0   | 2026-03-31 | Renamed package to piscord                                  |
-| 1.0.0   | 2026-03-28 | Initial release                                             |
+| Version    | Date       | Changes                                                                      |
+| ---------- | ---------- | ---------------------------------------------------------------------------- |
+| Unreleased | —          | Modern pi compatibility, optional threads and durable task/delivery recovery |
+| 1.7.0      | 2026-07-17 | `/pi model` syncs with pi's catalog and `enabledModels`                      |
+| 1.6.1      | 2026-06-15 | Fixed README version metadata                                                |
+| 1.6.0      | 2026-06-15 | Path-based attachment relay and clearer empty-output errors                  |
+| 1.5.3      | 2026-05-19 | Fix ESM peer-dep check, cross-platform test fixes                            |
+| 1.5.1      | 2026-05-15 | Startup check for legacy `@mariozechner/pi-ai` package                       |
+| 1.5.0      | 2026-05-15 | Cross-platform support (macOS, Windows), launchd, new deps                   |
+| 1.4.3      | 2026-05-03 | Compatibility with older pi-ai thinking APIs                                 |
+| 1.4.2      | 2026-04-06 | Fixed default XDG data directory mismatch                                    |
+| 1.4.1      | 2026-04-06 | Fixed text-only sends via piscord send                                       |
+| 1.4.0      | 2026-04-06 | Added per-channel working directories                                        |
+| 1.3.0      | 2026-04-04 | Improved setup UX, faster install                                            |
+| 1.2.0      | 2026-04-04 | Added channel policy, abort, scheduler, send-file                            |
+| 1.1.0      | 2026-03-31 | Renamed package to piscord                                                   |
+| 1.0.0      | 2026-03-28 | Initial release                                                              |
 
 See [Changelog](./CHANGELOG.md) for full details.
 

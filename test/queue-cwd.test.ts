@@ -15,6 +15,7 @@ vi.mock('../src/agent/invoke.js', () => ({
 
 vi.mock('../src/discord/client.js', () => ({
   sendResponse: sendResponseMock,
+  sendDurableResponse: sendResponseMock,
   setTyping: setTypingMock,
 }));
 

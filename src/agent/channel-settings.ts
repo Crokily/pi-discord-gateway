@@ -1,7 +1,9 @@
 import { config } from '../config.js';
+import { getChannel } from '../db.js';
 import {
   isThinkingLevel,
   listAvailableModels,
+  scheduleCatalogRefresh,
   resolveModelReference,
   resolveThinkingForModel,
   type AvailableModelInfo,
@@ -12,85 +14,85 @@ export interface EffectiveChannelSettings {
   rawModelRef: string;
   displayModel: string;
   modelInfo: AvailableModelInfo | undefined;
-  modelSource: 'override' | 'default' | 'pi runtime default';
+  modelSource: 'override' | 'parent' | 'default' | 'pi runtime default';
   requestedThinking: ThinkingLevel;
   effectiveThinking: ThinkingLevel;
   hasManagedThinking: boolean;
-  thinkingSource: 'override' | 'default' | 'pi runtime default';
+  thinkingSource: 'override' | 'parent' | 'default' | 'pi runtime default';
   thinkingAdjusted: boolean;
   thinkingAdjustmentMessage?: string;
   effectiveCwd: string;
-  cwdSource: 'override' | 'default';
+  cwdSource: 'override' | 'parent' | 'default';
 }
 
+export function inheritedOverrides(
+  channel: RegisteredChannel,
+): Pick<RegisteredChannel, 'modelOverride' | 'thinkingOverride' | 'cwdOverride'> {
+  const resolved = {
+    modelOverride: channel.modelOverride,
+    thinkingOverride: channel.thinkingOverride,
+    cwdOverride: channel.cwdOverride,
+  };
+  const visited = new Set([channel.jid]);
+  let parentJid = channel.parentJid;
+  while (parentJid && !visited.has(parentJid)) {
+    visited.add(parentJid);
+    const parent = getChannel(parentJid);
+    if (!parent || parent.deletedAt) break;
+    resolved.modelOverride ||= parent.modelOverride;
+    resolved.thinkingOverride ||= parent.thinkingOverride;
+    resolved.cwdOverride ||= parent.cwdOverride;
+    parentJid = parent.parentJid;
+  }
+  return resolved;
+}
+export function getEffectiveCwd(channel: RegisteredChannel): string {
+  return inheritedOverrides(channel).cwdOverride || config.piCwd;
+}
 export function getDesiredThinkingLevel(channel: RegisteredChannel): ThinkingLevel {
-  if (channel.thinkingOverride) {
-    return channel.thinkingOverride;
-  }
-  if (config.piThinking && isThinkingLevel(config.piThinking)) {
-    return config.piThinking;
-  }
-  return 'off';
+  return (
+    inheritedOverrides(channel).thinkingOverride ||
+    (isThinkingLevel(config.piThinking) ? config.piThinking : 'off')
+  );
 }
-
 export function computeEffectiveChannelSettings(
   channel: RegisteredChannel,
-  options?: { forceRefresh?: boolean },
 ): EffectiveChannelSettings {
-  const effectiveCwd = channel.cwdOverride || config.piCwd;
-  const models = listAvailableModels({
-    forceRefresh: options?.forceRefresh ?? false,
-    cwd: effectiveCwd,
-  });
-
-  const rawModelRef = channel.modelOverride || config.piModel || '';
+  const inherited = inheritedOverrides(channel);
+  const effectiveCwd = inherited.cwdOverride || config.piCwd;
+  scheduleCatalogRefresh(effectiveCwd);
+  const models = listAvailableModels({ cwd: effectiveCwd });
+  const rawModelRef = inherited.modelOverride || config.piModel || '';
   const modelInfo = rawModelRef ? resolveModelReference(rawModelRef, models) : undefined;
   const hasManagedThinking =
-    Boolean(channel.thinkingOverride) ||
-    Boolean(config.piThinking && isThinkingLevel(config.piThinking));
+    Boolean(inherited.thinkingOverride) || isThinkingLevel(config.piThinking);
   const desiredThinking = getDesiredThinkingLevel(channel);
-  const thinkingResolution = resolveThinkingForModel(modelInfo, desiredThinking);
-  const cwdSource: EffectiveChannelSettings['cwdSource'] = channel.cwdOverride
-    ? 'override'
-    : 'default';
-
-  let modelSource: EffectiveChannelSettings['modelSource'];
-  if (channel.modelOverride) {
-    modelSource = 'override';
-  } else if (config.piModel) {
-    modelSource = 'default';
-  } else {
-    modelSource = 'pi runtime default';
-  }
-
-  let thinkingSource: EffectiveChannelSettings['thinkingSource'];
-  if (channel.thinkingOverride) {
-    thinkingSource = 'override';
-  } else if (config.piThinking && isThinkingLevel(config.piThinking)) {
-    thinkingSource = 'default';
-  } else {
-    thinkingSource = 'pi runtime default';
-  }
-
+  const thinking = resolveThinkingForModel(modelInfo, desiredThinking);
+  const source = (
+    own: string,
+    parent: string,
+    global: string,
+  ): EffectiveChannelSettings['modelSource'] =>
+    own ? 'override' : parent ? 'parent' : global ? 'default' : 'pi runtime default';
   return {
     rawModelRef,
     displayModel: modelInfo?.ref || rawModelRef || '(pi runtime default)',
     modelInfo,
-    modelSource,
-    requestedThinking: thinkingResolution.requested,
-    effectiveThinking: thinkingResolution.effective,
+    modelSource: source(channel.modelOverride, inherited.modelOverride, config.piModel),
+    thinkingSource: source(
+      channel.thinkingOverride,
+      inherited.thinkingOverride,
+      isThinkingLevel(config.piThinking) ? config.piThinking : '',
+    ),
+    requestedThinking: thinking.requested,
+    effectiveThinking: thinking.effective,
     hasManagedThinking,
-    thinkingSource,
-    thinkingAdjusted: thinkingResolution.adjusted,
-    thinkingAdjustmentMessage: thinkingResolution.adjusted
-      ? buildThinkingAdjustmentMessage(
-          thinkingResolution.requested,
-          thinkingResolution.effective,
-          modelInfo,
-        )
+    thinkingAdjusted: thinking.adjusted,
+    thinkingAdjustmentMessage: thinking.adjusted
+      ? buildThinkingAdjustmentMessage(thinking.requested, thinking.effective, modelInfo)
       : undefined,
     effectiveCwd,
-    cwdSource,
+    cwdSource: channel.cwdOverride ? 'override' : inherited.cwdOverride ? 'parent' : 'default',
   };
 }
 
