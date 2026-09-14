@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-09-14
+
+### Upgrade notes
+
+- Requires Node.js >=22.19.0 and pi >=0.83.0 <0.86.0; pi 0.85.1 is recommended. pi 0.74 and older Node runtimes are no longer supported.
+- Stop the gateway and back up its config, database and sessions before upgrading. Existing channel settings and sessions are preserved by the additive migration.
+- Automatic threads are off by default. Interrupted execution is reported instead of rerun; saved answers can resume delivery.
 
 ### Changed
 
