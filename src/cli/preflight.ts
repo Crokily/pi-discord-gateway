@@ -39,3 +39,27 @@ export function checkPiDependencies(): void {
     assertSupportedPiVersion(version);
   }
 }
+
+/** Validate the executable actually used for discovery and tasks, independently of SDK peers. */
+export async function checkPiExecutable(
+  piBin: string,
+  cwd: string,
+  timeoutMs = 5000,
+): Promise<string> {
+  const { resolvePiSpawn } = await import('../agent/pi-spawn.js');
+  const { runProcess } = await import('../agent/subprocess.js');
+  const command = await resolvePiSpawn(piBin, ['--version']);
+  const result = await runProcess(command.bin, command.args, { cwd, timeoutMs });
+  if (result.timedOut) throw new Error(`PI_BIN (${piBin}) --version timed out.`);
+  if (result.code !== 0 || result.error || result.aborted)
+    throw new Error(
+      `Could not verify PI_BIN (${piBin}) --version: ${result.error || result.stderr.slice(0, 300) || 'command failed'}`,
+    );
+  const version = (result.stdout || result.stderr).trim();
+  try {
+    assertSupportedPiVersion(version);
+  } catch (error) {
+    throw new Error(`PI_BIN (${piBin}): ${(error as Error).message}`, { cause: error });
+  }
+  return version;
+}

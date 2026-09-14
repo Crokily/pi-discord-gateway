@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Forced model selection refreshes wait for current project scope settings instead of reusing a previous `enabledModels` list.
+- Setup and startup validate the configured `PI_BIN --version` as well as the installed SDK peer versions, with a bounded executable probe.
+- Shutdown stops queue dispatch and starts its grace period before waiting on thread-maintenance requests.
 - Replacing a host or container while retaining its database volume no longer leaves startup permanently blocked by an old hostname; renewable locks still prevent concurrent ownership.
 - Windows pi discovery resolves explicit npm `.cmd` paths to their Node entry point instead of attempting to spawn the command script directly.
 - Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.

@@ -24,7 +24,7 @@ interface ModelCache {
   loadedAt: number;
   nextRetryAt: number;
   patterns?: string[];
-  settingsReady?: Promise<void>;
+  settingsReady?: Promise<boolean>;
   error?: string;
 }
 export interface CatalogSources {
@@ -82,7 +82,12 @@ export class ModelCatalog {
   }
   async waitForSettings(cwd: string): Promise<void> {
     const state = this.state(cwd);
-    if (!state.patterns) await state.settingsReady;
+    let ready: Promise<boolean> | undefined;
+    do {
+      ready = state.settingsReady;
+      if (ready && !(await ready))
+        throw new Error('Model selection settings are temporarily unavailable. Try again.');
+    } while (ready !== state.settingsReady);
     if (!state.patterns)
       throw new Error('Model selection settings are temporarily unavailable. Try again.');
   }
@@ -106,24 +111,25 @@ export class ModelCatalog {
     try {
       this.controller.signal.throwIfAborted();
       let sdkModels: AvailableModelInfo[] | undefined;
-      let probe = this.probes.get(cwd);
-      if (!probe) {
-        let ready!: () => void;
-        state.settingsReady = new Promise<void>((resolve) => {
-          ready = resolve;
-        });
-        probe = this.sources.sdk(cwd, this.controller.signal, (patterns) => {
-          state.patterns = patterns;
-          ready();
-        });
-        this.probes.set(cwd, probe);
-        void probe
-          .finally(() => {
-            ready();
-            this.probes.delete(cwd);
-          })
-          .catch(() => {});
-      }
+      // A new refresh needs new settings, even if a previous metadata probe
+      // is still finishing. Keep one SDK probe per cwd and retain the bound.
+      await this.probes.get(cwd)?.catch(() => {});
+      this.controller.signal.throwIfAborted();
+      let ready!: (available: boolean) => void;
+      state.settingsReady = new Promise<boolean>((resolve) => {
+        ready = resolve;
+      });
+      const probe = this.sources.sdk(cwd, this.controller.signal, (patterns) => {
+        state.patterns = patterns;
+        ready(true);
+      });
+      this.probes.set(cwd, probe);
+      void probe
+        .finally(() => {
+          ready(false);
+          this.probes.delete(cwd);
+        })
+        .catch(() => {});
       void probe
         .then((models) => {
           sdkModels = models;

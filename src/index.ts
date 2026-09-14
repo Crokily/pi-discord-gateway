@@ -73,13 +73,13 @@ export async function startGateway(): Promise<void> {
       logger.info({ reason }, 'Shutting down gateway');
 
       stopScheduler();
-      await stopThreads();
+      // Stop dispatch and start the grace timer before waiting on Discord I/O.
+      const stoppedProcessing = processingStarted
+        ? stopProcessingLoop({ timeoutMs: config.shutdownTimeoutMs })
+        : Promise.resolve();
       stopArchiveCleanup();
       stopMediaCleanup();
-
-      if (processingStarted) {
-        await stopProcessingLoop({ timeoutMs: config.shutdownTimeoutMs });
-      }
+      await Promise.all([stoppedProcessing, stopThreads()]);
 
       await stopModelCatalog();
       stopDiscord();

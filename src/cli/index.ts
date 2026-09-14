@@ -3,7 +3,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { checkPiDependencies } from './preflight.js';
+import { checkPiDependencies, checkPiExecutable } from './preflight.js';
 import type { RegisteredChannel } from '../types.js';
 import { config, resolveConfigPath } from '../config.js';
 
@@ -28,6 +28,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     case 'start': {
       if (await maybeRunFirstTimeSetup()) return 0;
       checkPiDependencies();
+      await checkPiExecutable(config.piBin, config.piCwd);
       const { startGateway } = await import('../index.js');
       await startGateway();
       return 0;

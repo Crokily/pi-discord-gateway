@@ -21,6 +21,72 @@ const deferred = <T>() => {
 };
 
 describe('asynchronous model discovery', () => {
+  it('waits for refreshed scope settings without waiting for all SDK metadata', async () => {
+    const metadata = deferred<AvailableModelInfo[]>();
+    let report!: (patterns: string[]) => void;
+    let generation = 0;
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: async (_cwd, _signal, settings) => {
+        if (++generation === 1) {
+          settings(['test/alpha']);
+          return models;
+        }
+        report = settings;
+        return metadata.promise;
+      },
+    });
+    await catalog.refresh('/a');
+    await catalog.refresh('/a');
+    let settled = false;
+    const ready = catalog.waitForSettings('/a').then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    report(['test/beta']);
+    await ready;
+    expect(catalog.selectable('/a').map((model) => model.id)).toEqual(['beta']);
+    metadata.resolve(models);
+    await catalog.stop();
+  });
+  it('does not accept old settings when the current settings probe fails', async () => {
+    let generation = 0;
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: async (_cwd, _signal, settings) => {
+        if (++generation > 1) throw new Error('settings unavailable');
+        settings(['test/alpha']);
+        return models;
+      },
+    });
+    await catalog.refresh('/a');
+    await catalog.refresh('/a');
+    await expect(catalog.waitForSettings('/a')).rejects.toThrow(
+      'settings are temporarily unavailable',
+    );
+    await catalog.stop();
+  });
+  it('starts a fresh settings probe when earlier metadata is still running', async () => {
+    const metadata = deferred<AvailableModelInfo[]>();
+    let generation = 0;
+    const catalog = new ModelCatalog({
+      cli: async () => models,
+      sdk: async (_cwd, _signal, settings) => {
+        settings([++generation === 1 ? 'test/alpha' : 'test/beta']);
+        return generation === 1 ? metadata.promise : models;
+      },
+    });
+    await catalog.refresh('/a');
+    const refresh = catalog.refresh('/a');
+    metadata.resolve(models);
+    await refresh;
+    await catalog.waitForSettings('/a');
+    expect(generation).toBe(2);
+    expect(catalog.selectable('/a').map((model) => model.id)).toEqual(['beta']);
+    await catalog.stop();
+  });
+
   it('counts slow SDK probes against the warm-up concurrency limit after CLI results arrive', async () => {
     const probes = [
       deferred<AvailableModelInfo[]>(),

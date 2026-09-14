@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { runProcess } from '../agent/subprocess.js';
-import { resolvePiSpawn } from '../agent/pi-spawn.js';
+import { checkPiExecutable } from './preflight.js';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -205,13 +204,8 @@ async function checkPrerequisites(): Promise<{
   authFound: boolean;
   modelCount: number | undefined;
 }> {
-  const piPath = findExecutable(config.piBin);
-  const command = await resolvePiSpawn(config.piBin, ['--version']);
-  const versionResult = piPath
-    ? await runProcess(command.bin, command.args, { cwd: config.piCwd, timeoutMs: 5_000 })
-    : undefined;
-  const piVersion =
-    versionResult?.code === 0 ? versionResult.stdout || versionResult.stderr : undefined;
+  const piVersion = await checkPiExecutable(config.piBin, config.piCwd);
+  const piPath = findExecutable(config.piBin) || config.piBin;
   const authFound = existsSync(AUTH_PATH);
   let modelCount: number | undefined;
 

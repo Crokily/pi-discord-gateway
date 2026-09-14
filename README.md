@@ -127,7 +127,7 @@ Scheduled prompts directed to an enabled parent channel create a brief starter m
 
 ## Task Recovery and Delivery
 
-Stop the running gateway before upgrading. The database migration preserves existing channels, settings, sessions and pending messages. pi 0.74 is no longer supported; upgrade Node and pi together before starting this version.
+Stop the running gateway before upgrading. The database migration preserves existing channels, settings, sessions and pending messages. pi 0.74 is no longer supported; upgrade Node and pi together before starting this version. Setup and startup verify both the installed SDK peers and the executable selected by `PI_BIN` (or `PATH`); a missing, unsupported or unresponsive executable fails preflight.
 
 | State at restart                  | Behavior                                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------------------------- |

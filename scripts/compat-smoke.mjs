@@ -120,6 +120,19 @@ try {
   assert.doesNotMatch(setup.stderr, /does not provide an export/);
   const start = await node([join(root, 'dist/cli/index.js'), 'start']);
   assert.match(start.stderr, /No config found/);
+  const versionCheck = await script(
+    `const { checkPiExecutable } = await import(${JSON.stringify(moduleUrl('cli/preflight.js'))}); console.log(await checkPiExecutable(process.env.PI_BIN, process.cwd()));`,
+  );
+  assert.equal(versionCheck.code, 0, versionCheck.stderr);
+  assert.match(versionCheck.stdout.trim(), /^0\.8[345]\.\d+$/);
+  const invalidConfig = join(scratch, 'invalid-cli.env');
+  await writeFile(invalidConfig, 'DISCORD_BOT_TOKEN=fixture-only\n');
+  const invalidStart = await node([join(root, 'dist/cli/index.js'), 'start'], {
+    PI_BIN: process.execPath,
+    PIDG_CONFIG: invalidConfig,
+  });
+  assert.equal(invalidStart.code, 1);
+  assert.match(invalidStart.stderr, /PI_BIN.*Unsupported pi version/);
   const database = await script(`const db = await import(${JSON.stringify(moduleUrl('db.js'))});
     db.initDb(); db.closeDb(); console.log('DATABASE_OK');`);
   assert.equal(database.code, 0, database.stderr);

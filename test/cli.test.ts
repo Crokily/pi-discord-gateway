@@ -16,6 +16,11 @@ vi.mock('../src/index.js', () => ({
   startGateway: startGatewayMock,
 }));
 
+vi.mock('../src/cli/preflight.js', async (original) => ({
+  ...(await original<typeof import('../src/cli/preflight.js')>()),
+  checkPiExecutable: vi.fn().mockResolvedValue('0.85.1'),
+}));
+
 const originalEnv = { ...process.env };
 const tempDirs: string[] = [];
 const CONFIG_ENV_KEYS = ['DB_PATH', 'HOME', 'PI_CWD', 'PIDG_CONFIG', 'SESSIONS_DIR'];
@@ -56,6 +61,16 @@ describe('formatHelpText', () => {
 });
 
 describe('start command', () => {
+  it('rejects an unsupported executable before starting the gateway', async () => {
+    process.env.PIDG_CONFIG = resolve('package.json');
+    vi.resetModules();
+    const { checkPiExecutable } = await import('../src/cli/preflight.js');
+    vi.mocked(checkPiExecutable).mockRejectedValueOnce(new Error('Unsupported pi version 0.74.0'));
+    const { main } = await import('../src/cli/index.js');
+    await expect(main(['start'])).rejects.toThrow('Unsupported pi version');
+    expect(startGatewayMock).not.toHaveBeenCalled();
+  });
+
   it('does not report ESM-only pi-ai as a missing peer dependency', async () => {
     process.env.PIDG_CONFIG = resolve('package.json');
     startGatewayMock.mockResolvedValue(undefined);
@@ -65,6 +80,8 @@ describe('start command', () => {
 
     await expect(main(['start'])).resolves.toBe(0);
     expect(startGatewayMock).toHaveBeenCalledOnce();
+    const { checkPiExecutable } = await import('../src/cli/preflight.js');
+    expect(checkPiExecutable).toHaveBeenCalledOnce();
   });
 });
 
