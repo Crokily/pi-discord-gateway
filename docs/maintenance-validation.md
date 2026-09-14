@@ -4,12 +4,13 @@ Validated on 2026-09-14 before PR submission. Live Discord regression exercised 
 
 ## Automated checks
 
-- 92 tests across 21 files pass on the minimum supported Node.js version, 22.19.0.
+- 96 tests across 21 files pass on the minimum supported Node.js version, 22.19.0.
 - ESLint, Prettier, source/test type checking, build, and `git diff --check` pass.
 - Real pi 0.83.0, 0.84.2 and 0.85.1 package fixtures were exercised during implementation, including SDK fallback, CLI discovery, extension models and session continuation. Node 24 and mixed SDK/CLI versions were also exercised. The final runtime revision was smoke-tested with pi 0.85.1 again.
 - New queue integration tests use real supervised processes and SQLite. They cover active cancellation, pending cancellation, independent conversations, bounded shutdown, restart without replay, timeout despite ignored SIGTERM, and resuming long-answer delivery without invoking pi again.
 - POSIX fault injection kills a gateway fixture with SIGKILL, verifies its owned child exits, and recovers the abandoned lock after advancing that lock's modification time past the stale threshold.
 - Delivery tests cover lost acknowledgements, nonce reconciliation, expiry of the safe resend window, permanent rejection, rate-limit backoff, ordering, progress-based retry budgets and late failure after cancellation.
+- Host replacement regression covers foreign-host records with stale, absent and fresh locks, plus a live local PID with an expired heartbeat.
 - Slash command tests cover user/bot permissions, invalid thread targets, disabling after permission removal, and resetting thread overrides without modifying parent defaults.
 
 ## Real Discord regression

@@ -8,7 +8,7 @@ import {
   mkdirSync,
   utimesSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runProcess } from '../src/agent/subprocess.js';
@@ -120,6 +120,47 @@ describe('bounded subprocesses', () => {
 });
 
 describe('gateway instance lock', () => {
+  it.each(['stale', 'absent'])(
+    'recovers a foreign owner when its renewable lock is %s',
+    async (state) => {
+      const path = join(directory(), 'gateway.db');
+      writeFileSync(
+        `${path}.owner.json`,
+        JSON.stringify({ pid: process.pid, host: `${hostname()}-old`, token: 'old' }),
+      );
+      if (state === 'stale') {
+        mkdirSync(`${path}.lock`);
+        const stale = new Date(Date.now() - 60000);
+        utimesSync(`${path}.lock`, stale, stale);
+      }
+      const release = await acquireInstanceLock(path, () => {});
+      try {
+        expect(JSON.parse(readFileSync(`${path}.owner.json`, 'utf8'))).toMatchObject({
+          pid: process.pid,
+          host: hostname(),
+        });
+      } finally {
+        await release();
+      }
+    },
+  );
+  it('does not replace a foreign owner while its renewable lock is fresh', async () => {
+    const path = join(directory(), 'gateway.db');
+    const owner = JSON.stringify({ pid: process.pid, host: `${hostname()}-other`, token: 'other' });
+    writeFileSync(`${path}.owner.json`, owner);
+    mkdirSync(`${path}.lock`);
+    await expect(acquireInstanceLock(path, () => {})).rejects.toThrow('lock has not expired');
+    expect(readFileSync(`${path}.owner.json`, 'utf8')).toBe(owner);
+  });
+  it('still refuses a live local PID even if its heartbeat is stale', async () => {
+    const path = join(directory(), 'gateway.db');
+    writeFileSync(`${path}.owner.json`, JSON.stringify({ pid: process.pid, host: hostname() }));
+    mkdirSync(`${path}.lock`);
+    const stale = new Date(Date.now() - 60000);
+    utimesSync(`${path}.lock`, stale, stale);
+    await expect(acquireInstanceLock(path, () => {})).rejects.toThrow('process still owns');
+  });
+
   it.skipIf(process.platform === 'win32')(
     'cleans owned processes after SIGKILL and recovers a dead owner lock',
     async () => {

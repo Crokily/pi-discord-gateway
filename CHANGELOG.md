@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Replacing a host or container while retaining its database volume no longer leaves startup permanently blocked by an old hostname; renewable locks still prevent concurrent ownership.
 - Windows pi discovery resolves explicit npm `.cmd` paths to their Node entry point instead of attempting to spawn the command script directly.
 - Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.
 - Late Discord request failures preserve explicit task cancellation instead of replacing it with a delivery error.

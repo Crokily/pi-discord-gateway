@@ -16,18 +16,27 @@ export async function acquireInstanceLock(
   const ownerPath = `${canonical}.owner.json`;
   try {
     const owner = JSON.parse(await readFile(ownerPath, 'utf8')) as { pid: number; host: string };
-    if (!Number.isInteger(owner.pid) || owner.pid <= 0 || owner.host !== hostname())
+    if (
+      !Number.isInteger(owner.pid) ||
+      owner.pid <= 0 ||
+      typeof owner.host !== 'string' ||
+      !owner.host
+    )
       throw new Error('Cannot verify the existing gateway lock owner');
-    let alive = true;
-    try {
-      process.kill(owner.pid, 0);
-    } catch (error) {
-      alive = (error as NodeJS.ErrnoException).code !== 'ESRCH';
+    // PIDs are only meaningful on the host that wrote the record. Foreign
+    // owners must be arbitrated by the renewable lock below, not local PIDs.
+    if (owner.host === hostname()) {
+      let alive = true;
+      try {
+        process.kill(owner.pid, 0);
+      } catch (error) {
+        alive = (error as NodeJS.ErrnoException).code !== 'ESRCH';
+      }
+      if (alive)
+        throw new Error(
+          'Another gateway process still owns this database. Stop it before restarting.',
+        );
     }
-    if (alive)
-      throw new Error(
-        'Another gateway process still owns this database. Stop it before restarting.',
-      );
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       if (error instanceof SyntaxError)
