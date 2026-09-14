@@ -74,6 +74,19 @@ Thanks for your interest in contributing! This guide will help you get started.
 - Add tests for new functionality when possible.
 - Update the README if you're adding user-facing features.
 
+## Releasing
+
+Merging a PR into `main` runs CI but does **not** publish to npm. The [Release workflow](./.github/workflows/release.yml) runs when a `v*.*.*` tag is pushed.
+
+For a release:
+
+1. After the changes have merged and CI has passed, choose a new version that has not been published. Update `package.json` and `package-lock.json` together, move the `Unreleased` changelog entries under that version and date, and update the README version history.
+2. Commit those release changes on `main` through the normal review process. Keep feature PRs under `Unreleased` until a release version is selected.
+3. Tag the release commit with `v` followed by the exact package version, then push the tag. The workflow rejects a tag whose version differs from `package.json`.
+4. Check the Release workflow result. It installs dependencies, builds and tests, publishes with npm provenance, and creates a GitHub Release. Publishing requires the repository's configured npm credentials (`NPM_TOKEN`). Stable versions use npm's `latest` tag; versions containing a prerelease suffix use `next`.
+
+A successful PR merge or CI run alone does not mean a new npm package is available. Confirm that the separate Release workflow completed successfully.
+
 ## Code Style
 
 This project uses **ESLint** and **Prettier** to enforce consistent code style:

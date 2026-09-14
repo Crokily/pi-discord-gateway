@@ -16,13 +16,12 @@ All notable changes to this project will be documented in this file.
 - `/pi reset-thinking` restores inherited/default thinking settings.
 - Persisted answer chunks, bounded delivery retries and reconciliation of uncertain sends. `piscord result <task-id>` reads a saved answer without executing the task again.
 - A gateway instance lock and per-invocation process supervision. `AGENT_TIMEOUT_MS` optionally limits task duration; the default remains unlimited.
-- Real pi compatibility smoke tests using an isolated configuration and local HTTP model, including CLI discovery, SDK fallback, extension discovery and session continuation.
+- Real pi compatibility smoke tests using an isolated configuration and local HTTP model, including CLI discovery, SDK fallback, extension discovery and session continuation. Additional regression coverage exercises process death, cancellation races, delivery recovery and thread permission boundaries.
 
 ### Fixed
 
 - Discord system notices no longer trigger agent tasks or cause manually created threads to bypass channel registration.
 - Late Discord request failures preserve explicit task cancellation instead of replacing it with a delivery error.
-
 - New pi releases no longer fail on the removed AuthStorage export or obsolete ModelRegistry initialization.
 - Reply metadata no longer hides an explicit bot mention from trigger matching.
 - Cancellation, shutdown and timeout clean up process listeners and timers; stopped tasks are not revived on restart.
