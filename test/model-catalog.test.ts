@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ModelCatalog,
@@ -111,7 +112,7 @@ describe('asynchronous model discovery', () => {
     const catalog = new ModelCatalog({
       cli: async () => models,
       sdk: async (cwd, _signal, settings) => {
-        settings(cwd === '/a' ? scope : ['other/*']);
+        settings(cwd === resolve('/a') ? scope : ['other/*']);
         return models;
       },
     });
