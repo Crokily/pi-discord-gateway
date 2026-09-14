@@ -1,6 +1,6 @@
 # Maintenance validation
 
-Validated on 2026-09-14 before PR submission. The final runtime fixes are in `72c4d72`; subsequent changes add tests and this record.
+Validated on 2026-09-14 before PR submission. The final runtime fixes are in `72c4d72`; subsequent changes add tests, documentation and consistent LF checkouts for cross-platform CI.
 
 ## Automated checks
 
@@ -46,6 +46,6 @@ The deployment also had two configuration issues: the service PATH omitted an in
 
 ## Scope and remaining limits
 
-This is sufficient for PR review, not a claim that every operating system, Discord permission combination or external provider failure has been exercised live. Windows/macOS jobs are configured but have not run remotely yet. Rate limits, ambiguous delivery and hard crashes were tested with isolated transports/processes rather than fault injection against the live bot. Open/open-trigger access policies, exclusions, attachment limits, retention and CLI validation also have automated coverage.
+This is sufficient for PR review, not a claim that every operating system, Discord permission combination or external provider failure has been exercised live. CI includes Windows/macOS jobs; see the PR checks for results on each commit. Real Discord testing remains Linux-only. Rate limits, ambiguous delivery and hard crashes were tested with isolated transports/processes rather than fault injection against the live bot. Open/open-trigger access policies, exclusions, attachment limits, retention and CLI validation also have automated coverage.
 
 After testing, temporary schedules were removed, the test channel's automatic threads were switched off, and the upgraded service was left running. The original installation and pre-upgrade data/configuration backups remain available.
