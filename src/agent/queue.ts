@@ -18,7 +18,12 @@ import {
   postponeNotice,
 } from '../db.js';
 import { invokeAgent } from './invoke.js';
-import { sendResponse, sendDurableResponse, setStatusReaction, setTyping } from '../discord/client.js';
+import {
+  sendResponse,
+  sendDurableResponse,
+  setStatusReaction,
+  setTyping,
+} from '../discord/client.js';
 import { splitResponse } from '../discord/delivery.js';
 import { routeQueuedMessage } from '../discord/threads.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
@@ -216,7 +221,11 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
 }
 async function reactToSourceMessage(message: QueuedMessage, emoji: string): Promise<void> {
   if (!message.source_message_id) return;
-  await setStatusReaction(message.origin_jid || message.channel_jid, message.source_message_id, emoji);
+  await setStatusReaction(
+    message.origin_jid || message.channel_jid,
+    message.source_message_id,
+    emoji,
+  );
 }
 
 function createTypingLoop(jid: string): { stop(): void } {

@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ script: '', send: vi.fn(), find: vi.fn() }));
+const state = vi.hoisted(() => ({
+  script: '',
+  send: vi.fn(),
+  find: vi.fn(),
+  setStatusReaction: vi.fn(),
+}));
 vi.mock('../src/agent/pi-spawn.js', () => ({
   resolvePiSpawn: async (_bin: string, args: string[]) => ({
     bin: process.execPath,
@@ -21,6 +26,7 @@ vi.mock('../src/discord/client.js', () => ({
     const { deliverResponse } = await import('../src/discord/delivery.js');
     return deliverResponse(id, { send: state.send, find: state.find }, signal);
   },
+  setStatusReaction: state.setStatusReaction,
 }));
 let directory: string;
 let db: typeof import('../src/db.js');
@@ -57,6 +63,7 @@ if (prompt.includes('BLOCK')) {
   vi.resetModules();
   state.send.mockReset().mockResolvedValue('discord-id');
   state.find.mockReset().mockResolvedValue(undefined);
+  state.setStatusReaction.mockReset().mockResolvedValue(true);
   db = await import('../src/db.js');
   db.initDb();
   queue = await import('../src/agent/queue.js');
@@ -78,13 +85,14 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   rmSync(directory, { recursive: true, force: true });
 });
-function enqueue(content: string, channelJid = 'dc:a') {
+function enqueue(content: string, channelJid = 'dc:a', sourceMessageId?: string) {
   return db.enqueueMessage({
     channelJid,
     content,
     sender: 'test',
     senderName: 'Test',
     timestamp: new Date().toISOString(),
+    sourceMessageId,
   });
 }
 async function started() {
@@ -152,5 +160,18 @@ describe('queue with real supervised processes and durable SQLite', () => {
     expect(state.send.mock.calls.map((call) => call[1].length)).toEqual([2000, 2000, 2000, 200]);
     expect(db.getResponseChunks(id).every((chunk) => chunk.status === 'sent')).toBe(true);
     expect(readFileSync(join(directory, 'calls'), 'utf8').match(/LONG/g)).toHaveLength(1);
+  });
+  it('marks the source Discord message with a status reaction on completion', async () => {
+    const { config } = await import('../src/config.js');
+    const id = enqueue('answer', 'dc:a', 'source-msg-1');
+    queue.startProcessingLoop();
+    await status(id, 'done');
+    await vi.waitFor(() =>
+      expect(state.setStatusReaction).toHaveBeenCalledWith(
+        'dc:a',
+        'source-msg-1',
+        config.discordReactionDone,
+      ),
+    );
   });
 });

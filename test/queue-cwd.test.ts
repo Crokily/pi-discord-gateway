@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { invokeAgentMock, sendResponseMock, setTypingMock } = vi.hoisted(() => ({
-  invokeAgentMock: vi.fn(),
-  sendResponseMock: vi.fn(),
-  setTypingMock: vi.fn(),
-}));
+const { invokeAgentMock, sendResponseMock, setTypingMock, setStatusReactionMock } = vi.hoisted(
+  () => ({
+    invokeAgentMock: vi.fn(),
+    sendResponseMock: vi.fn(),
+    setTypingMock: vi.fn(),
+    setStatusReactionMock: vi.fn(),
+  }),
+);
 
 vi.mock('../src/agent/invoke.js', () => ({
   invokeAgent: invokeAgentMock,
@@ -17,6 +20,7 @@ vi.mock('../src/discord/client.js', () => ({
   sendResponse: sendResponseMock,
   sendDurableResponse: sendResponseMock,
   setTyping: setTypingMock,
+  setStatusReaction: setStatusReactionMock,
 }));
 
 const originalEnv = { ...process.env };
@@ -72,6 +76,7 @@ async function runQueuedMessage(cwdOverride: string): Promise<{ cwd?: string } |
   invokeAgentMock.mockResolvedValue({ ok: true, text: 'done' });
   sendResponseMock.mockResolvedValue(true);
   setTypingMock.mockResolvedValue(undefined);
+  setStatusReactionMock.mockResolvedValue(true);
 
   vi.resetModules();
   const db = await import('../src/db.js');
