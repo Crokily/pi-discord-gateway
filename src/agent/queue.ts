@@ -18,7 +18,7 @@ import {
   postponeNotice,
 } from '../db.js';
 import { invokeAgent } from './invoke.js';
-import { sendResponse, sendDurableResponse, setTyping } from '../discord/client.js';
+import { sendResponse, sendDurableResponse, setStatusReaction, setTyping } from '../discord/client.js';
 import { splitResponse } from '../discord/delivery.js';
 import { routeQueuedMessage } from '../discord/threads.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
@@ -112,20 +112,24 @@ function dispatch(): void {
     if (!message) continue;
     const controller = new AbortController();
     const promise = processMessage(message, controller.signal)
-      .catch((err) => {
+      .catch(async (err) => {
         logger.error({ err, rowid: message.rowid }, 'Task processing failed');
         const status = getQueuedMessage(message.rowid)?.status;
-        if (status === 'processing')
+        if (status === 'processing') {
           markMessageFailed(
             message.rowid,
             `Internal error: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`,
           );
-        if (status === 'delivering')
+          void reactToSourceMessage(message, config.discordReactionFailed);
+        }
+        if (status === 'delivering') {
           setMessageState(
             message.rowid,
             'delivery_failed',
             `Delivery failed; the answer is saved. Use piscord result ${message.rowid}.`,
           );
+          void reactToSourceMessage(message, config.discordReactionFailed);
+        }
       })
       .finally(() => {
         activeChannels.delete(jid);
@@ -140,6 +144,7 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
   const channel = getChannel(jid);
   if (!channel || channel.deletedAt) {
     markMessageFailed(message.rowid, 'The destination channel is no longer available.');
+    void reactToSourceMessage(message, config.discordReactionFailed);
     return;
   }
   if (message.status === 'routing') {
@@ -147,11 +152,13 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
       await routeQueuedMessage(message, signal);
     } catch (err) {
       logger.warn({ err, rowid: message.rowid }, 'Thread creation failed');
-      if (!signal.aborted)
+      if (!signal.aborted) {
         markMessageFailed(
           message.rowid,
           `Could not open a conversation thread for task #${message.rowid}. The task has not run. Check thread permissions and try again.`,
         );
+        void reactToSourceMessage(message, config.discordReactionFailed);
+      }
     }
     return;
   }
@@ -178,6 +185,10 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
             'interrupted',
             'The gateway stopped during this task. Some operations may have completed; check before submitting it again.',
           );
+        void reactToSourceMessage(
+          message,
+          signal.reason === 'user' ? config.discordReactionCancelled : config.discordReactionFailed,
+        );
         return;
       }
       if (!result.ok) {
@@ -187,6 +198,7 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
             ? result.error
             : `Agent error: ${result.error?.slice(0, 300) || 'unknown error'}`,
         );
+        void reactToSourceMessage(message, config.discordReactionFailed);
         logger.warn({ rowid: message.rowid, error: result.error }, 'Agent returned an error');
         return;
       }
@@ -196,11 +208,17 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
       const saved = getQueuedMessage(message.rowid);
       if (saved?.response_text) logMessage(jid, 'assistant', saved.response_text);
       markMessageDone(message.rowid);
+      void reactToSourceMessage(message, config.discordReactionDone);
     }
   } finally {
     typing.stop();
   }
 }
+async function reactToSourceMessage(message: QueuedMessage, emoji: string): Promise<void> {
+  if (!message.source_message_id) return;
+  await setStatusReaction(message.origin_jid || message.channel_jid, message.source_message_id, emoji);
+}
+
 function createTypingLoop(jid: string): { stop(): void } {
   let inFlight = false;
   const tick = () => {

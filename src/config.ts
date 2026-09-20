@@ -201,6 +201,21 @@ export const config = {
   /** Max size for a single Discord attachment in bytes (0 disables the limit) */
   maxAttachmentBytes: envInt('MAX_ATTACHMENT_BYTES', 25 * 1024 * 1024, { min: 0 }),
 
+  /** Add status reactions to source Discord messages */
+  discordReactionsEnabled: envBool('DISCORD_REACTIONS_ENABLED', true),
+
+  /** Reaction added when a message is accepted into the queue */
+  discordReactionQueued: env('DISCORD_REACTION_QUEUED', '👀'),
+
+  /** Reaction added when a task completes successfully */
+  discordReactionDone: env('DISCORD_REACTION_DONE', '✅'),
+
+  /** Reaction added when a task fails */
+  discordReactionFailed: env('DISCORD_REACTION_FAILED', '❌'),
+
+  /** Reaction added when a task is cancelled */
+  discordReactionCancelled: env('DISCORD_REACTION_CANCELLED', '🛑'),
+
   /** Max combined attachment size per Discord message in bytes (0 disables the limit) */
   maxTotalAttachmentBytes: envInt('MAX_TOTAL_ATTACHMENT_BYTES', 50 * 1024 * 1024, { min: 0 }),
 } as const;

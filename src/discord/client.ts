@@ -279,7 +279,7 @@ async function handleMessage(message: Message): Promise<void> {
   }
 
   // ── Enqueue ──
-  enqueueMessage({
+  const queuedRowid = enqueueMessage({
     channelJid: jid,
     sender,
     senderName,
@@ -289,6 +289,11 @@ async function handleMessage(message: Message): Promise<void> {
     sourceMessageId: message.id,
     routeThread: !message.channel.isThread() && channel.threadMode === 'auto',
   });
+  if (queuedRowid > 0) {
+    // Fire-and-forget: reactions are cosmetic and Discord's reaction endpoint
+    // is tightly rate-limited, so don't let it delay message processing.
+    void setStatusReaction(jid, message.id, config.discordReactionQueued);
+  }
   logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
 
@@ -334,6 +339,58 @@ export const deliveryTransport: DeliveryTransport = {
 
 export function sendDurableResponse(rowid: number, signal: AbortSignal): Promise<boolean> {
   return deliverResponse(rowid, deliveryTransport, signal);
+}
+
+// messageId -> emoji we last put on it, so status transitions only ever touch
+// the one reaction that's actually there instead of guessing across all four.
+const lastStatusReaction = new Map<string, string>();
+
+export async function setStatusReaction(
+  jid: string,
+  messageId: string,
+  emoji: string,
+): Promise<boolean> {
+  if (!deliveryRest || !config.discordReactionsEnabled || !emoji) return false;
+
+  const channelId = jid.replace(/^dc:/, '');
+  const previous = lastStatusReaction.get(messageId);
+
+  if (previous && previous !== emoji) {
+    await deleteOwnReaction(channelId, messageId, previous);
+  }
+
+  try {
+    await deliveryRest.put(reactionRoute(channelId, messageId, emoji));
+    // Terminal states won't transition again — drop tracking instead of
+    // growing the map for the lifetime of the gateway process.
+    if (emoji === config.discordReactionQueued) {
+      lastStatusReaction.set(messageId, emoji);
+    } else {
+      lastStatusReaction.delete(messageId);
+    }
+    return true;
+  } catch (err: any) {
+    logger.debug({ jid, messageId, emoji, err: err.message }, 'Failed to add Discord reaction');
+    return false;
+  }
+}
+
+async function deleteOwnReaction(
+  channelId: string,
+  messageId: string,
+  emoji: string,
+): Promise<void> {
+  try {
+    await deliveryRest!.delete(reactionRoute(channelId, messageId, emoji));
+  } catch {
+    // Missing reactions or missing permissions should not block status updates.
+  }
+}
+
+function reactionRoute(channelId: string, messageId: string, emoji: string): `/${string}` {
+  return `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(
+    normalizeReactionEmoji(emoji),
+  )}/@me`;
 }
 
 export async function setTyping(jid: string): Promise<void> {
@@ -385,6 +442,11 @@ function threadInfo(channel: RawThread) {
 async function getThreadInfo(id: string) {
   if (!deliveryRest) throw new Error('Discord is not connected');
   return threadInfo((await deliveryRest.get(Routes.channel(id))) as RawThread);
+}
+
+function normalizeReactionEmoji(emoji: string): string {
+  const custom = emoji.match(/^<a?:([^:>]+):(\d+)>$/u);
+  return custom ? `${custom[1]}:${custom[2]}` : emoji;
 }
 
 function escapeRegExp(text: string): string {
