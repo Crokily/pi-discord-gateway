@@ -266,6 +266,8 @@ Most users won't need to edit this file directly — `piscord setup` generates i
 | `DB_PATH`                    | _(platform default)_/gateway.db | SQLite database path (see Data Locations)                                  |
 | `LOG_LEVEL`                  | `info`                          | Log level: debug/info/warn/error                                           |
 
+Status reactions need the `Add Reactions` permission. Set `DISCORD_REACTIONS_ENABLED=false` to turn them off; a blank `DISCORD_REACTION_*` value falls back to its default rather than disabling that reaction.
+
 After changing config, restart the service: `piscord daemon stop && piscord daemon start`
 
 ## CLI Reference

@@ -161,6 +161,44 @@ describe('queue with real supervised processes and durable SQLite', () => {
     expect(db.getResponseChunks(id).every((chunk) => chunk.status === 'sent')).toBe(true);
     expect(readFileSync(join(directory, 'calls'), 'utf8').match(/LONG/g)).toHaveLength(1);
   });
+  it('marks queued source messages as cancelled when a channel is stopped', async () => {
+    const { config } = await import('../src/config.js');
+    enqueue('BLOCK', 'dc:a', 'active-msg');
+    const pending = enqueue('SHOULD-NOT-RUN', 'dc:a', 'pending-msg');
+    queue.startProcessingLoop();
+    await started();
+    expect(queue.abortChannelTask('dc:a')).toEqual({ aborted: true, cleared: 1 });
+    await status(pending, 'cancelled');
+    await queue.stopProcessingLoop({ timeoutMs: 0 });
+    await vi.waitFor(() => {
+      expect(state.setStatusReaction).toHaveBeenCalledWith(
+        'dc:a',
+        'pending-msg',
+        config.discordReactionCancelled,
+      );
+      expect(state.setStatusReaction).toHaveBeenCalledWith(
+        'dc:a',
+        'active-msg',
+        config.discordReactionCancelled,
+      );
+    });
+  });
+  it('marks the source Discord message as failed when delivery is rejected', async () => {
+    const { config } = await import('../src/config.js');
+    state.send
+      .mockReset()
+      .mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+    const id = enqueue('answer', 'dc:a', 'source-msg-2');
+    queue.startProcessingLoop();
+    await status(id, 'delivery_failed');
+    await vi.waitFor(() =>
+      expect(state.setStatusReaction).toHaveBeenCalledWith(
+        'dc:a',
+        'source-msg-2',
+        config.discordReactionFailed,
+      ),
+    );
+  });
   it('marks the source Discord message with a status reaction on completion', async () => {
     const { config } = await import('../src/config.js');
     const id = enqueue('answer', 'dc:a', 'source-msg-1');

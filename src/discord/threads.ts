@@ -1,6 +1,5 @@
 import {
   attachThreadParent,
-  clearPendingMessages,
   getAllChannels,
   getChannel,
   getQueuedMessage,
@@ -11,7 +10,7 @@ import {
   routingAnchor,
   setRoutingAnchor,
 } from '../db.js';
-import { abortChannelTask, isChannelProcessing } from '../agent/queue.js';
+import { abortChannelTask, cancelQueuedMessages, isChannelProcessing } from '../agent/queue.js';
 import { rotateChannelSessionDir } from '../session/path.js';
 import type { QueuedMessage, RegisteredChannel } from '../types.js';
 import { logger } from '../logger.js';
@@ -135,7 +134,7 @@ export function isUnknownChannel(error: unknown): boolean {
 export function handleThreadDeleted(id: string): void {
   const jid = `dc:${id}`;
   if (!getChannel(jid)) {
-    clearPendingMessages(jid);
+    cancelQueuedMessages(jid);
     return;
   }
   abortChannelTask(jid);

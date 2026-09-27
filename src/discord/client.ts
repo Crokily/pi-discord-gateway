@@ -41,6 +41,8 @@ let client: Client | null = null;
 let triggerPattern: RegExp;
 let botId: string;
 let deliveryRest: REST | undefined;
+let reactionRest: REST | undefined;
+let reactionPermissionWarned = false;
 
 export async function startDiscord(): Promise<void> {
   // The persisted delivery queue owns the retry budget for outbound answers.
@@ -50,6 +52,11 @@ export async function startDiscord(): Promise<void> {
     timeout: 10_000,
     rejectOnRateLimit: () => true,
   }).setToken(config.discordToken);
+  // Status reactions are cosmetic and fire-and-forget. Discord's reaction endpoint is
+  // tightly rate-limited, so this client waits out rate limits instead of rejecting.
+  reactionRest = new REST({ version: '10', retries: 1, timeout: 10_000 }).setToken(
+    config.discordToken,
+  );
   client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -341,56 +348,54 @@ export function sendDurableResponse(rowid: number, signal: AbortSignal): Promise
   return deliverResponse(rowid, deliveryTransport, signal);
 }
 
-// messageId -> emoji we last put on it, so status transitions only ever touch
-// the one reaction that's actually there instead of guessing across all four.
-const lastStatusReaction = new Map<string, string>();
-
+/**
+ * Put a status reaction on the source message. The queued reaction is always removed
+ * before a terminal one is added, so no in-memory state has to survive a restart.
+ */
 export async function setStatusReaction(
   jid: string,
   messageId: string,
   emoji: string,
 ): Promise<boolean> {
-  if (!deliveryRest || !config.discordReactionsEnabled || !emoji) return false;
+  if (!reactionRest || !config.discordReactionsEnabled || !emoji) return false;
 
   const channelId = jid.replace(/^dc:/, '');
-  const previous = lastStatusReaction.get(messageId);
-
-  if (previous && previous !== emoji) {
-    await deleteOwnReaction(channelId, messageId, previous);
+  const queued = config.discordReactionQueued;
+  if (queued && emoji !== queued) {
+    try {
+      await reactionRest.delete(reactionRoute(channelId, messageId, queued));
+    } catch {
+      // The queued reaction may be absent (restart, race, or never added).
+    }
   }
 
   try {
-    await deliveryRest.put(reactionRoute(channelId, messageId, emoji));
-    // Terminal states won't transition again — drop tracking instead of
-    // growing the map for the lifetime of the gateway process.
-    if (emoji === config.discordReactionQueued) {
-      lastStatusReaction.set(messageId, emoji);
-    } else {
-      lastStatusReaction.delete(messageId);
-    }
+    await reactionRest.put(reactionRoute(channelId, messageId, emoji));
     return true;
-  } catch (err: any) {
-    logger.debug({ jid, messageId, emoji, err: err.message }, 'Failed to add Discord reaction');
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    if ((code === 50001 || code === 50013) && !reactionPermissionWarned) {
+      reactionPermissionWarned = true;
+      logger.warn(
+        { jid, code },
+        'Discord status reactions need the Add Reactions permission; grant it or set DISCORD_REACTIONS_ENABLED=false',
+      );
+    } else {
+      logger.debug(
+        { jid, messageId, emoji, err: (err as Error).message },
+        'Failed to add Discord reaction',
+      );
+    }
     return false;
   }
 }
 
-async function deleteOwnReaction(
-  channelId: string,
-  messageId: string,
-  emoji: string,
-): Promise<void> {
-  try {
-    await deliveryRest!.delete(reactionRoute(channelId, messageId, emoji));
-  } catch {
-    // Missing reactions or missing permissions should not block status updates.
-  }
-}
-
-function reactionRoute(channelId: string, messageId: string, emoji: string): `/${string}` {
-  return `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(
-    normalizeReactionEmoji(emoji),
-  )}/@me`;
+function reactionRoute(channelId: string, messageId: string, emoji: string) {
+  return Routes.channelMessageOwnReaction(
+    channelId,
+    messageId,
+    encodeURIComponent(normalizeReactionEmoji(emoji)),
+  );
 }
 
 export async function setTyping(jid: string): Promise<void> {
@@ -407,6 +412,7 @@ export async function setTyping(jid: string): Promise<void> {
 }
 
 export function stopDiscord(): void {
+  reactionRest = undefined;
   if (client) {
     client.destroy();
     client = null;
