@@ -330,14 +330,21 @@ export function setMessageState(
     "update message_queue set status = ?, notice_text = coalesce(?, notice_text), processed_at = datetime('now') where rowid = ?",
   ).run(status, notice ?? null, rowid);
 }
-export function clearPendingMessages(channelJid: string): number {
+/** Identifies the Discord message a queue row was created from. */
+export type QueuedMessageSource = Pick<
+  QueuedMessage,
+  'rowid' | 'channel_jid' | 'origin_jid' | 'source_message_id'
+>;
+const SOURCE_COLUMNS = 'rowid, channel_jid, origin_jid, source_message_id';
+
+export function clearPendingMessages(channelJid: string): QueuedMessageSource[] {
   return db
     .prepare(
-      "update message_queue set status = 'cancelled', processed_at = datetime('now') where (channel_jid = ? and status in ('pending', 'routing', 'delivering')) or (status = 'routing' and 'dc:' || coalesce(source_message_id, anchor_message_id) = ?)",
+      `update message_queue set status = 'cancelled', processed_at = datetime('now') where (channel_jid = ? and status in ('pending', 'routing', 'delivering')) or (status = 'routing' and 'dc:' || coalesce(source_message_id, anchor_message_id) = ?) returning ${SOURCE_COLUMNS}`,
     )
-    .run(channelJid, channelJid).changes;
+    .all(channelJid, channelJid) as QueuedMessageSource[];
 }
-export function recoverStuckMessages(): number {
+export function recoverStuckMessages(): QueuedMessageSource[] {
   return db.transaction(() => {
     // Routing has not invoked pi yet. Its persisted source/anchor makes retry safe.
     db.prepare("update message_queue set status = 'pending' where status = 'routing'").run();
@@ -345,9 +352,9 @@ export function recoverStuckMessages(): number {
       .prepare(
         `update message_queue set status = 'interrupted', notice_text =
       'The gateway restarted during this task. Some operations may have completed. Check the result before submitting it again.'
-      where status = 'processing'`,
+      where status = 'processing' returning ${SOURCE_COLUMNS}`,
       )
-      .run().changes;
+      .all() as QueuedMessageSource[];
   })();
 }
 export function channelsWithPending(): string[] {

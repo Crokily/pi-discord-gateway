@@ -109,7 +109,7 @@ describe('durable recovery', () => {
     const pending = enqueue();
     db.closeDb();
     db.initDb();
-    expect(db.recoverStuckMessages()).toBe(1);
+    expect(db.recoverStuckMessages()).toHaveLength(1);
     expect(db.getQueuedMessage(interrupted)?.status).toBe('interrupted');
     expect(db.getQueuedMessage(delivery)).toMatchObject({
       status: 'delivering',
@@ -118,7 +118,7 @@ describe('durable recovery', () => {
     expect(db.getQueuedMessage(cancelled)?.status).toBe('cancelled');
     expect(db.getQueuedMessage(pending)?.status).toBe('pending');
     expect(db.pendingNotices()).toHaveLength(1);
-    expect(db.recoverStuckMessages()).toBe(0);
+    expect(db.recoverStuckMessages()).toHaveLength(0);
   });
   it('resumes only unsent answer chunks after reopening the database', async () => {
     const { deliverResponse } = await import('../src/discord/delivery.js');
@@ -231,7 +231,7 @@ describe('conversation threads', () => {
     const { routeQueuedMessage } = await import('../src/discord/threads.js');
     const { io } = threadTransport();
     await io.create('parent', 'question', 'Created before routing finished');
-    expect(db.clearPendingMessages('dc:question')).toBe(1);
+    expect(db.clearPendingMessages('dc:question')).toHaveLength(1);
     await routeQueuedMessage(pending, new AbortController().signal, io);
     expect(db.getQueuedMessage(id)?.status).toBe('cancelled');
     expect(db.claimNextMessage('dc:question')).toBeUndefined();

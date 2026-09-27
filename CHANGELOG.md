@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Status reactions on the source Discord message: 👀 when queued, ✅ when done, ❌ when failed or interrupted, 🛑 when cancelled. Configurable with `DISCORD_REACTIONS_ENABLED` and `DISCORD_REACTION_*`; requires the `Add Reactions` bot permission. Contributed by @ce-dric.
+
 ## [2.0.0] - 2026-09-14
 
 ### Upgrade notes

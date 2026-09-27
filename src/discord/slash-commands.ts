@@ -19,7 +19,6 @@ import {
   clearChannelModelOverride,
   clearChannelThinkingOverride,
   setChannelThreadMode,
-  clearPendingMessages,
   createDmChannel,
   getChannel,
   registerChannel,
@@ -47,7 +46,7 @@ import {
   getEffectiveCwd,
   type EffectiveChannelSettings,
 } from '../agent/channel-settings.js';
-import { abortChannelTask, isChannelProcessing } from '../agent/queue.js';
+import { abortChannelTask, cancelQueuedMessages, isChannelProcessing } from '../agent/queue.js';
 import { rotateChannelSessionDir } from '../session/path.js';
 import type { RegisteredChannel } from '../types.js';
 
@@ -276,7 +275,7 @@ async function handleNew(interaction: ChatInputCommandInteraction): Promise<void
     return;
   }
 
-  const cleared = clearPendingMessages(channel.jid);
+  const cleared = cancelQueuedMessages(channel.jid);
   const archivedSession = rotateChannelSessionDir(channel.folder);
 
   logger.info(
