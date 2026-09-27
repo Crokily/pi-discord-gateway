@@ -18,11 +18,17 @@ import {
   postponeNotice,
 } from '../db.js';
 import { invokeAgent } from './invoke.js';
-import { sendResponse, sendDurableResponse, setTyping } from '../discord/client.js';
+import {
+  sendResponse,
+  sendDurableResponse,
+  setStatusReaction,
+  setTyping,
+} from '../discord/client.js';
 import { splitResponse } from '../discord/delivery.js';
 import { routeQueuedMessage } from '../discord/threads.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
 import type { QueuedMessage } from '../types.js';
+import type { QueuedMessageSource } from '../db.js';
 
 const activeChannels = new Map<
   string,
@@ -43,15 +49,25 @@ export function abortChannelTask(jid: string): { aborted: boolean; cleared: numb
     setMessageState(active.rowid, 'cancelled');
     active.controller.abort('user');
   }
-  return { aborted: Boolean(active), cleared: clearPendingMessages(jid) };
+  return { aborted: Boolean(active), cleared: cancelQueuedMessages(jid) };
+}
+/** Cancel queued work for a channel and mark each source message as cancelled. */
+export function cancelQueuedMessages(jid: string): number {
+  const cancelled = clearPendingMessages(jid);
+  for (const message of cancelled) void reactToSourceMessage(message, 'cancelled');
+  return cancelled.length;
 }
 export function startProcessingLoop(): void {
   if (running) return;
   running = true;
   stopPromise = undefined;
   const interrupted = recoverStuckMessages();
-  if (interrupted)
-    logger.warn({ interrupted }, 'Recorded interrupted tasks; execution will not be replayed');
+  if (interrupted.length)
+    logger.warn(
+      { interrupted: interrupted.length },
+      'Recorded interrupted tasks; execution will not be replayed',
+    );
+  for (const message of interrupted) void reactToSourceMessage(message, 'interrupted');
   schedulePoll(0);
 }
 export function stopProcessingLoop(options: { timeoutMs?: number } = {}): Promise<void> {
@@ -128,6 +144,9 @@ function dispatch(): void {
           );
       })
       .finally(() => {
+        // The reaction mirrors whatever terminal state this pass left in the database,
+        // including states written by delivery or by /stop.
+        void reactToSourceMessage(message, getQueuedMessage(message.rowid)?.status);
         activeChannels.delete(jid);
         nextNoticeAt = 0;
         schedulePoll(0);
@@ -201,6 +220,35 @@ async function processMessage(message: QueuedMessage, signal: AbortSignal): Prom
     typing.stop();
   }
 }
+/** Status reaction for each terminal queue state. Non-terminal states keep the queued one. */
+function statusReaction(status: QueuedMessage['status'] | undefined): string | undefined {
+  switch (status) {
+    case 'done':
+      return config.discordReactionDone;
+    case 'cancelled':
+      return config.discordReactionCancelled;
+    case 'failed':
+    case 'interrupted':
+    case 'delivery_failed':
+    case 'delivery_uncertain':
+      return config.discordReactionFailed;
+    default:
+      return undefined;
+  }
+}
+async function reactToSourceMessage(
+  message: QueuedMessageSource,
+  status: QueuedMessage['status'] | undefined,
+): Promise<void> {
+  const emoji = statusReaction(status);
+  if (!emoji || !message.source_message_id) return;
+  await setStatusReaction(
+    message.origin_jid || message.channel_jid,
+    message.source_message_id,
+    emoji,
+  );
+}
+
 function createTypingLoop(jid: string): { stop(): void } {
   let inFlight = false;
   const tick = () => {

@@ -41,6 +41,8 @@ let client: Client | null = null;
 let triggerPattern: RegExp;
 let botId: string;
 let deliveryRest: REST | undefined;
+let reactionRest: REST | undefined;
+let reactionPermissionWarned = false;
 
 export async function startDiscord(): Promise<void> {
   // The persisted delivery queue owns the retry budget for outbound answers.
@@ -50,6 +52,11 @@ export async function startDiscord(): Promise<void> {
     timeout: 10_000,
     rejectOnRateLimit: () => true,
   }).setToken(config.discordToken);
+  // Status reactions are cosmetic and fire-and-forget. Discord's reaction endpoint is
+  // tightly rate-limited, so this client waits out rate limits instead of rejecting.
+  reactionRest = new REST({ version: '10', retries: 1, timeout: 10_000 }).setToken(
+    config.discordToken,
+  );
   client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -279,7 +286,7 @@ async function handleMessage(message: Message): Promise<void> {
   }
 
   // ── Enqueue ──
-  enqueueMessage({
+  const queuedRowid = enqueueMessage({
     channelJid: jid,
     sender,
     senderName,
@@ -289,6 +296,11 @@ async function handleMessage(message: Message): Promise<void> {
     sourceMessageId: message.id,
     routeThread: !message.channel.isThread() && channel.threadMode === 'auto',
   });
+  if (queuedRowid > 0) {
+    // Fire-and-forget: reactions are cosmetic and Discord's reaction endpoint
+    // is tightly rate-limited, so don't let it delay message processing.
+    void setStatusReaction(jid, message.id, config.discordReactionQueued);
+  }
   logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
 }
 
@@ -336,6 +348,56 @@ export function sendDurableResponse(rowid: number, signal: AbortSignal): Promise
   return deliverResponse(rowid, deliveryTransport, signal);
 }
 
+/**
+ * Put a status reaction on the source message. The queued reaction is always removed
+ * before a terminal one is added, so no in-memory state has to survive a restart.
+ */
+export async function setStatusReaction(
+  jid: string,
+  messageId: string,
+  emoji: string,
+): Promise<boolean> {
+  if (!reactionRest || !config.discordReactionsEnabled || !emoji) return false;
+
+  const channelId = jid.replace(/^dc:/, '');
+  const queued = config.discordReactionQueued;
+  if (queued && emoji !== queued) {
+    try {
+      await reactionRest.delete(reactionRoute(channelId, messageId, queued));
+    } catch {
+      // The queued reaction may be absent (restart, race, or never added).
+    }
+  }
+
+  try {
+    await reactionRest.put(reactionRoute(channelId, messageId, emoji));
+    return true;
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    if ((code === 50001 || code === 50013) && !reactionPermissionWarned) {
+      reactionPermissionWarned = true;
+      logger.warn(
+        { jid, code },
+        'Discord status reactions need the Add Reactions permission; grant it or set DISCORD_REACTIONS_ENABLED=false',
+      );
+    } else {
+      logger.debug(
+        { jid, messageId, emoji, err: (err as Error).message },
+        'Failed to add Discord reaction',
+      );
+    }
+    return false;
+  }
+}
+
+function reactionRoute(channelId: string, messageId: string, emoji: string) {
+  return Routes.channelMessageOwnReaction(
+    channelId,
+    messageId,
+    encodeURIComponent(normalizeReactionEmoji(emoji)),
+  );
+}
+
 export async function setTyping(jid: string): Promise<void> {
   if (!client) return;
   try {
@@ -350,6 +412,7 @@ export async function setTyping(jid: string): Promise<void> {
 }
 
 export function stopDiscord(): void {
+  reactionRest = undefined;
   if (client) {
     client.destroy();
     client = null;
@@ -385,6 +448,11 @@ function threadInfo(channel: RawThread) {
 async function getThreadInfo(id: string) {
   if (!deliveryRest) throw new Error('Discord is not connected');
   return threadInfo((await deliveryRest.get(Routes.channel(id))) as RawThread);
+}
+
+function normalizeReactionEmoji(emoji: string): string {
+  const custom = emoji.match(/^<a?:([^:>]+):(\d+)>$/u);
+  return custom ? `${custom[1]}:${custom[2]}` : emoji;
 }
 
 function escapeRegExp(text: string): string {
