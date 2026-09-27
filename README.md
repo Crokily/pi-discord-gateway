@@ -13,7 +13,7 @@
 
 A lightweight Discord gateway for [pi coding agent](https://github.com/badlogic/pi-mono). SQLite-backed queue, per-channel session isolation, crash recovery, abort support. One command to set up, runs as a daemon, and keeps task and delivery state across restarts.
 
-**Latest release: 2.0.0.** Requires Node.js ≥22.19.0 and pi ≥0.83.0 <0.86.0. See [upgrade and recovery](#task-recovery-and-delivery) before updating from 1.x, and [Changelog](./CHANGELOG.md) for details.
+**Latest release: 2.1.0.** Requires Node.js ≥22.19.0 and pi ≥0.83.0 <0.86.0. See [upgrade and recovery](#task-recovery-and-delivery) before updating from 1.x, and [Changelog](./CHANGELOG.md) for details.
 
 ```bash
 npm install -g piscord
@@ -400,6 +400,7 @@ MIT
 
 | Version | Date       | Changes                                                                      |
 | ------- | ---------- | ---------------------------------------------------------------------------- |
+| 2.1.0   | 2026-09-27 | Status reactions on source messages (queued/done/failed/cancelled)           |
 | 2.0.0   | 2026-09-14 | Modern pi compatibility, optional threads and durable task/delivery recovery |
 | 1.7.0   | 2026-07-17 | `/pi model` syncs with pi's catalog and `enabledModels`                      |
 | 1.6.1   | 2026-06-15 | Fixed README version metadata                                                |
